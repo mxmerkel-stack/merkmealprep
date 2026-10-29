@@ -48,10 +48,12 @@ label.f input,label.f select{display:block;width:100%;margin-top:2px;color:var(-
 ul.ing{margin:4px 0;padding-left:18px}
 .wk{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .warn{color:var(--warn);font-size:13px}
+.hrt{cursor:pointer;font-size:19px;margin-left:4px;user-select:none}
+button.bt.on{background:var(--g);color:#fff}
 </style>
 </head>
 <body>
-<header><h1>🍽️ Essensplaner</h1></header>
+<header><span id="syn" style="float:right;font-size:12px;opacity:.85;margin-top:4px"></span><h1>🍽️ Essensplaner</h1></header>
 <main id="app"></main>
 <nav id="nav"></nav>
 <div id="modal"></div>
@@ -222,10 +224,11 @@ const KEY='essensplaner_v1';
 const defaults=()=>({persons:[
  {id:'p1',name:'Maximilian',age:'',diet:'alles',exclude:'',likes:'',protein:'',factor:1},
  {id:'p2',name:'Partnerin',age:'',diet:'vegetarisch',exclude:'',likes:'',protein:'',factor:1}],
- custom:[],plan:{},checked:{},settings:{worker:'',token:''}});
+ custom:[],plan:{},checked:{},settings:{worker:'',token:''},favs:{}});
 let S;
 try{S=Object.assign(defaults(),JSON.parse(localStorage.getItem(KEY)||'null')||{})}catch(e){S=defaults()}
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+const save=()=>{saveLocal();schedulePush()};
 const recipes=()=>SEED.concat(S.custom);
 const rec=id=>recipes().find(r=>r.id===id);
 const person=id=>S.persons.find(p=>p.id===id);
@@ -263,7 +266,7 @@ function candidates(k,cat){
   if(!c.length)c=pick(r=>(cat==='aufwendig'||r.cat==='schnell')&&!used.has(r.id));
   if(!c.length)c=ok;return c}
 function suggest(k,cat){const c=candidates(k,cat);if(!c.length)return alert('Kein passendes Rezept für diese Mitesser gefunden.');
-  const e=entry(k);e.rid=c[Math.floor(Math.random()*c.length)].id;e.addons={};save();render()}
+  const e=entry(k);e.rid=pickRand(c).id;e.addons={};save();render()}
 
 function nutHtml(n,p){
   if(!n)return'';const goal=Number(p&&p.protein);
@@ -283,7 +286,7 @@ function dayCard(d,wd){
       const goal=Number(p.protein);const pct=goal&&n?Math.round(n.p/goal*100):null;
       return `<div style="margin-top:8px"><div class="row sp"><b>${esc(p.name)}</b>${dsh.id!==r.id?`<span class="badge b">→ ${esc(dsh.title)}</span>`:''}</div>${extra}${nutHtml(n,p)}${pct!==null?`<div class="mu">${pct}% des Eiweißziels</div><div class="pb"><i style="width:${Math.min(pct,100)}%"></i></div>`:''}</div>`}).join('');
     const hint=r.type==='gemischt'&&new Set(ps.map(p=>dishFor(p,r)&&dishFor(p,r).id)).size>1?'<div class="warn">⚠ Zwei Gerichte nötig</div>':'';
-    body=`<div class="row sp" style="margin-top:8px"><b data-act="open" data-id="${r.id}" style="cursor:pointer">${esc(r.title)}</b><span class="badge ${r.type==='gemischt'?'w':''}">${TYPES[r.type]}</span></div><div class="mu">${r.min} Min · ${r.cat}</div>${hint}${lines}
+    body=`<div class="row sp" style="margin-top:8px"><b data-act="open" data-id="${r.id}" style="cursor:pointer">${esc(r.title)} ${heart(r.id)}</b><span class="badge ${r.type==='gemischt'?'w':''}">${TYPES[r.type]}</span></div><div class="mu">${r.min} Min · ${r.cat}</div>${hint}${lines}
     <div class="row" style="margin-top:10px"><button class="bt sm sec" data-act="sug" data-k="${k}" data-cat="${cat}">Neu vorschlagen</button><button class="bt sm sec" data-act="pick" data-k="${k}">Wählen</button><button class="bt sm dng" data-act="clear" data-k="${k}">Leeren</button></div>`;
   }else body=`<div class="row" style="margin-top:10px"><button class="bt sm" data-act="sug" data-k="${k}" data-cat="${cat}">Vorschlag</button><button class="bt sm sec" data-act="pick" data-k="${k}">Rezept wählen</button></div>`;
   return `<div class="card"><div class="row sp"><h2 style="margin:0">${WD[wd]} ${pad(d.getDate())}.${pad(d.getMonth()+1)}.</h2><span class="badge ${cat==='schnell'?'':'w'}">${cat==='schnell'?'schnell':'aufwendiger'}</span></div><div class="row" style="margin-top:6px">${chips}</div>${body}</div>`}
@@ -325,14 +328,14 @@ function recipeTab(){
    <select data-act="rcat"><option value="">alle Zeiten</option><option value="schnell" ${rcat==='schnell'?'selected':''}>schnell</option><option value="aufwendig" ${rcat==='aufwendig'?'selected':''}>aufwendiger</option></select>
    <select data-act="rtype"><option value="">alle Typen</option>${Object.entries(TYPES).map(([k,v])=>`<option value="${k}" ${rtype===k?'selected':''}>${v}</option>`).join('')}</select></div>
    <button class="bt sm" style="margin-top:8px" data-act="newrec">＋ Neues Rezept</button></div>`
-  +list.map(r=>{const n=recNut(r);return `<div class="card" data-act="open" data-id="${r.id}" style="cursor:pointer"><div class="row sp"><b>${esc(r.title)}</b><span class="badge ${r.type==='gemischt'?'w':''}">${TYPES[r.type]}</span></div><div class="mu">${r.min} Min · ${r.cat} · ${r.serv} Portionen · ${r.diet}</div>${nutHtml(n)}</div>`}).join('')}
+  +list.map(r=>{const n=recNut(r);return `<div class="card" data-act="open" data-id="${r.id}" style="cursor:pointer"><div class="row sp"><b>${esc(r.title)} ${heart(r.id)}</b><span class="badge ${r.type==='gemischt'?'w':''}">${TYPES[r.type]}</span></div><div class="mu">${r.min} Min · ${r.cat} · ${r.serv} Portionen · ${r.diet}</div>${nutHtml(n)}</div>`}).join('')}
 
 function recipeModal(id){
   const r=rec(id);if(!r)return;const n=recNut(r);
   const ings=r.ings.map(i=>`<li>${Math.round(i.a*10)/10} ${i.u==='Stk'?'':i.u+' '}${esc(i.n)}${ING[i.n]?'':' <span class="warn">(unbekannt – ohne Nährwerte)</span>'}</li>`).join('');
   const pair=r.pair&&rec(r.pair);
   const ads=(r.addons||[]).map(a=>{const an=addN(n,nut(a.ings));return `<div style="margin-top:6px"><b>${esc(a.label)}</b> <span class="badge">${a.diet}</span>${nutHtml(an)}</div>`}).join('');
-  modal(`<div class="row sp"><h2 style="margin:0">${esc(r.title)}</h2><button class="bt sm sec" data-act="close">✕</button></div>
+  modal(`<div class="row sp"><h2 style="margin:0">${esc(r.title)} ${heart(r.id)}</h2><button class="bt sm sec" data-act="close">✕</button></div>
   <div class="row" style="margin-top:6px"><span class="badge ${r.type==='gemischt'?'w':''}">${TYPES[r.type]}</span><span class="badge">${r.diet}</span><span class="mu">${r.min} Min · ${r.serv} Portionen</span></div>
   <div class="mu">${TIPS[r.type]}</div>
   <h3>Nährwerte pro Portion${r.addons&&r.addons.length?' (Basis)':''}</h3>${nutHtml(n)}
@@ -430,14 +433,153 @@ function profileTab(){
   <div class="card" style="margin-top:12px"><h2>Daten sichern / übertragen</h2><div class="mu">Bis die gemeinsame Cloud-Synchronisation steht, liegen die Daten im Browser dieses Geräts. Mit Export und Import könnt ihr sie zwischen Handy und PC übertragen.</div>
   <div class="row" style="margin-top:8px"><button class="bt sm sec" data-act="export">Exportieren</button><button class="bt sm sec" data-act="import">Importieren</button></div></div>`}
 
+
+/* ============ Favoriten & Historie ============ */
+const heart=id=>`<span class="hrt" data-act="fav" data-id="${id}">${S.favs[id]?'❤️':'🤍'}</span>`;
+function pickRand(c){const pool=[];c.forEach(r=>{pool.push(r);if(S.favs[r.id])pool.push(r)});return pool[Math.floor(Math.random()*pool.length)]}
+function toggleFav(id){if(S.favs[id])delete S.favs[id];else S.favs[id]=true;save();
+  document.querySelectorAll('[data-act="fav"]').forEach(e=>{if(e.dataset.id===id)e.textContent=S.favs[id]?'❤️':'🤍'});if(tab==='favs')render()}
+function favTab(){const l=recipes().filter(r=>S.favs[r.id]).sort((a,b)=>a.title.localeCompare(b.title));
+  if(!l.length)return '<div class="card mu">Noch keine Favoriten. Tippe auf das 🤍 bei einem Rezept (im Plan, bei den Rezepten oder im Rezept selbst), dann erscheint es hier.</div>';
+  return l.map(r=>{const n=recNut(r);return `<div class="card" data-act="open" data-id="${r.id}" style="cursor:pointer"><div class="row sp"><b>${esc(r.title)} ${heart(r.id)}</b><span class="badge ${r.type==='gemischt'?'w':''}">${TYPES[r.type]}</span></div><div class="mu">${r.min} Min · ${r.cat} · ${r.diet}</div>${nutHtml(n)}</div>`}).join('')}
+let hmode='verlauf';
+const dmy=k=>k.split('-').reverse().join('.');
+const daysAgo=k=>Math.round((new Date(iso(new Date())+'T12:00')-new Date(k+'T12:00'))/864e5);
+const ago=k=>{const d=daysAgo(k);return d===0?'heute':d===1?'gestern':'vor '+d+' Tagen'};
+function eatenRows(){const today=iso(new Date());return Object.entries(S.plan).filter(([k,e])=>e.rid&&k<=today&&rec(e.rid)).map(([k,e])=>({k,r:rec(e.rid),e})).sort((a,b)=>b.k.localeCompare(a.k))}
+function histTab(){
+  const rows=eatenRows();
+  const seg=`<div class="row" style="margin-bottom:10px">${[['verlauf','Verlauf'],['top','Meistgegessen'],['last','Zuletzt']].map(([k,l])=>`<button class="bt sm ${hmode===k?'on':'sec'}" data-act="hmode" data-m="${k}">${l}</button>`).join('')}</div>`;
+  if(hmode==='verlauf'){
+    if(!rows.length)return seg+'<div class="card mu">Noch leer. Der Verlauf füllt sich automatisch, sobald geplante Tage vergangen sind.</div>';
+    return seg+rows.map(x=>{const wd=WD[(new Date(x.k+'T12:00').getDay()+6)%7];const who=eaterSet(x.e).map(p=>esc(p.name)).join(', ');
+      return `<div class="card"><div class="row sp"><b data-act="open" data-id="${x.r.id}" style="cursor:pointer">${esc(x.r.title)}</b><span class="mu">${wd} ${dmy(x.k)}</span></div><div class="mu">${who||'–'} · ${ago(x.k)}</div></div>`}).join('')}
+  const stat={};rows.forEach(x=>{const t=stat[x.r.id]||(stat[x.r.id]={r:x.r,n:0,last:x.k});t.n++;if(x.k>t.last)t.last=x.k});
+  if(hmode==='top'){const l=Object.values(stat).sort((a,b)=>b.n-a.n||b.last.localeCompare(a.last));
+    if(!l.length)return seg+'<div class="card mu">Noch keine Daten.</div>';
+    return seg+l.map((t,i)=>`<div class="card"><div class="row sp"><b data-act="open" data-id="${t.r.id}" style="cursor:pointer">${i+1}. ${esc(t.r.title)}</b><span class="badge">${t.n}×</span></div><div class="mu">zuletzt ${dmy(t.last)} (${ago(t.last)})</div></div>`).join('')}
+  const all=recipes().map(r=>({r,last:stat[r.id]&&stat[r.id].last}));
+  const eaten=all.filter(a=>a.last).sort((a,b)=>a.last.localeCompare(b.last)),never=all.filter(a=>!a.last);
+  return seg+'<div class="mu" style="margin-bottom:8px">Am längsten her zuerst – gut, um Abwechslung zu finden.</div>'+eaten.concat(never).map(a=>`<div class="card"><div class="row sp"><b data-act="open" data-id="${a.r.id}" style="cursor:pointer">${esc(a.r.title)}</b><span class="mu">${a.last?ago(a.last):'noch nie'}</span></div>${a.last?`<div class="mu">${dmy(a.last)}</div>`:''}</div>`).join('')}
+function moreTab(){return `<div class="card" data-act="tab" data-t="add" style="cursor:pointer"><h2>➕ Rezept hinzufügen</h2><div class="mu">Manuell, per Link, Foto oder eingefügtem Text</div></div>
+<div class="card" data-act="tab" data-t="profile" style="cursor:pointer"><h2>👤 Profile</h2><div class="mu">Personen, Ernährungsform, Ausschlüsse, Eiweißziele</div></div>
+<div class="card" data-act="tab" data-t="account" style="cursor:pointer"><h2>☁️ Konto &amp; Sync</h2><div class="mu">${cloudOn()?'Verbunden – gemeinsame Daten':auth?'Angemeldet, noch kein Haushalt':'Anmelden, damit ihr dieselben Daten seht'}</div></div>`}
+
+/* ============ Cloud-Sync (Supabase, ohne Fremdbibliothek) ============ */
+const SB={url:'https://ewwotoruoplvagwyjdfj.supabase.co',key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3d290b3J1b3BsdmFnd3lqZGZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyOTU4NTksImV4cCI6MjEwODg3MTg1OX0.mD13eYfqVL4Vlcq3AfMq-LrsR16PXRQUeXlbSZzHh4w'};
+const AUTHKEY='essensplaner_auth_v1';
+let auth=null;try{auth=JSON.parse(localStorage.getItem(AUTHKEY)||'null')}catch(e){}
+let HH=null,lastPushed={},lastTs='',pushing=false,again=false,pt=null,syncMsg='';
+const cloudOn=()=>!!(auth&&auth.access_token&&HH);
+const canon=v=>v===null||typeof v!=='object'?JSON.stringify(v):Array.isArray(v)?'['+v.map(canon).join(',')+']':'{'+Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}';
+function setSync(m){syncMsg=m;const e=document.getElementById('syn');if(e)e.textContent=auth?(m==='verbunden'?'☁ verbunden':'☁ '+m):''}
+const MSG={'Invalid login credentials':'E-Mail oder Passwort falsch','Email not confirmed':'E-Mail noch nicht bestätigt','User already registered':'Diese E-Mail ist schon registriert'};
+async function errText(r){let j={};try{j=await r.json()}catch(e){}const m=j.msg||j.error_description||j.message||j.hint||('Fehler '+r.status);return MSG[m]||m}
+function saveAuth(){try{auth?localStorage.setItem(AUTHKEY,JSON.stringify(auth)):localStorage.removeItem(AUTHKEY)}catch(e){}}
+function takeSession(j,email){auth={access_token:j.access_token,refresh_token:j.refresh_token,expires_at:Math.floor(Date.now()/1000)+(j.expires_in||3600),email:(j.user&&j.user.email)||email};saveAuth()}
+async function refreshAuth(){if(!auth||!auth.refresh_token)return false;
+  try{const r=await fetch(SB.url+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:auth.refresh_token})});
+    if(!r.ok){auth=null;HH=null;saveAuth();setSync('');return false}takeSession(await r.json(),auth.email);return true}catch(e){return false}}
+async function sbFetch(path,opt,retry=true){opt=opt||{};
+  if(auth&&auth.expires_at&&auth.expires_at-Date.now()/1000<60&&retry)await refreshAuth();
+  const h=Object.assign({apikey:SB.key,'Content-Type':'application/json'},opt.headers||{});
+  h.Authorization='Bearer '+((auth&&auth.access_token)||SB.key);
+  const r=await fetch(SB.url+path,Object.assign({},opt,{headers:h}));
+  if(r.status===401&&auth&&retry&&await refreshAuth())return sbFetch(path,opt,false);
+  return r}
+async function authCall(kind,email,pw){
+  const url=kind==='up'?'/auth/v1/signup':'/auth/v1/token?grant_type=password';
+  const r=await fetch(SB.url+url,{method:'POST',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify({email,password:pw})});
+  if(!r.ok)throw new Error(await errText(r));
+  const j=await r.json();if(j.access_token){takeSession(j,email);return true}return false}
+async function rpc(name,args){const r=await sbFetch('/rest/v1/rpc/'+name,{method:'POST',body:JSON.stringify(args||{})});if(!r.ok)throw new Error(await errText(r));return r.json()}
+async function loadHH(){const a=await rpc('my_household');HH=a&&a[0]?a[0]:null;
+  if(HH){lastPushed={};lastTs='';await pullAll();await pushDiff()}setSync(HH?'verbunden':'kein Haushalt')}
+function localRows(){const m={};
+  S.persons.forEach((p,i)=>{p.o=i;m['person|'+p.id]={kind:'person',key:p.id,data:Object.assign({},p)}});
+  S.custom.forEach(r=>m['recipe|'+r.id]={kind:'recipe',key:r.id,data:r});
+  Object.keys(S.plan).forEach(k=>m['plan|'+k]={kind:'plan',key:k,data:S.plan[k]});
+  Object.keys(S.favs||{}).forEach(id=>{if(S.favs[id])m['fav|'+id]={kind:'fav',key:id,data:{}}});
+  Object.keys(S.checked).forEach(ws=>m['check|'+ws]={kind:'check',key:ws,data:S.checked[ws]});
+  if(S.settings&&(S.settings.worker||S.settings.token))m['setting|worker']={kind:'setting',key:'worker',data:S.settings};
+  return m}
+function schedulePush(){if(!cloudOn())return;clearTimeout(pt);pt=setTimeout(()=>{pt=null;pushDiff()},600)}
+async function pushDiff(){
+  if(!cloudOn())return;if(pushing){again=true;return}
+  const cur=localRows(),batch=[];
+  for(const id in cur){const js=canon(cur[id].data);if(lastPushed[id]!==js)batch.push({id,js,row:{household_id:HH.id,kind:cur[id].kind,key:cur[id].key,data:cur[id].data,deleted:false}})}
+  for(const id in lastPushed){if(!(id in cur)&&lastPushed[id]!=='DEL'){const i=id.indexOf('|');batch.push({id,js:'DEL',row:{household_id:HH.id,kind:id.slice(0,i),key:id.slice(i+1),data:{},deleted:true}})}}
+  if(!batch.length)return;
+  pushing=true;
+  try{const r=await sbFetch('/rest/v1/items?on_conflict=household_id,kind,key',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(batch.map(b=>b.row))});
+    if(!r.ok)throw new Error(await errText(r));
+    batch.forEach(b=>lastPushed[b.id]=b.js);setSync('verbunden')}
+  catch(e){setSync('Sync-Fehler');console.warn(e)}
+  finally{pushing=false;if(again){again=false;schedulePush()}}}
+async function fetchRows(since){
+  const q='/rest/v1/items?select=kind,key,data,deleted,updated_at&household_id=eq.'+HH.id+(since?'&updated_at=gt.'+encodeURIComponent(since):'')+'&order=updated_at.asc&limit=5000';
+  const r=await sbFetch(q);if(!r.ok)throw new Error(await errText(r));return r.json()}
+async function pullAll(){applyRows(await fetchRows(''),true)}
+async function poll(){if(!cloudOn()||pushing||pt)return;
+  try{const rows=await fetchRows(lastTs);if(rows.length)applyRows(rows,false);setSync('verbunden')}catch(e){setSync('offline')}}
+function applyRows(rows,full){
+  const kinds=new Set(rows.map(r=>r.kind));
+  S.persons.forEach((p,i)=>{if(p.o==null)p.o=i});
+  if(full){lastTs='';if(kinds.has('person'))S.persons=[];if(kinds.has('recipe'))S.custom=[];if(kinds.has('plan'))S.plan={};if(kinds.has('fav'))S.favs={};if(kinds.has('check'))S.checked={}}
+  let changed=false;
+  for(const r of rows){const id=r.kind+'|'+r.key;if(r.updated_at>lastTs)lastTs=r.updated_at;
+    const js=r.deleted?'DEL':canon(r.data);if(!full&&lastPushed[id]===js)continue;
+    lastPushed[id]=js;changed=true;
+    switch(r.kind){
+      case'person':S.persons=S.persons.filter(p=>p.id!==r.key);if(!r.deleted)S.persons.push(Object.assign({},r.data,{id:r.key}));break;
+      case'recipe':S.custom=S.custom.filter(x=>x.id!==r.key);if(!r.deleted)S.custom.push(r.data);break;
+      case'plan':if(r.deleted)delete S.plan[r.key];else S.plan[r.key]=r.data;break;
+      case'fav':if(r.deleted)delete S.favs[r.key];else S.favs[r.key]=true;break;
+      case'check':if(r.deleted)delete S.checked[r.key];else S.checked[r.key]=r.data;break;
+      case'setting':if(!r.deleted)S.settings=r.data;break}}
+  S.persons.sort((a,b)=>(a.o==null?99:a.o)-(b.o==null?99:b.o));
+  if(!S.persons.length)S.persons=defaults().persons;
+  if(changed||full){saveLocal();render()}}
+async function boot(){
+  if(auth){try{await loadHH()}catch(e){setSync('offline')}}
+  setSync(syncMsg);
+  setInterval(()=>{if(document.visibilityState==='visible')poll()},15000);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')poll()})}
+
+function accountTab(){
+  const box=h=>`<div class="card">${h}</div>`;
+  if(!auth)return box(`<h2>☁️ Anmelden</h2><div class="mu">Mit einem Konto seht ihr beide dieselben Daten, am Handy und am PC. Jeder legt ein eigenes Konto an (E-Mail + Passwort), danach verbindet ihr euch über einen Einladungscode.</div>
+   <label class="f">E-Mail<input id="acc_mail" type="email" autocomplete="email"></label><label class="f">Passwort (mind. 6 Zeichen)<input id="acc_pw" type="password" autocomplete="current-password"></label>
+   <div class="row" style="margin-top:10px"><button class="bt" data-act="login">Anmelden</button><button class="bt sec" data-act="register">Neu registrieren</button></div><div id="acc_s" class="warn" style="margin-top:8px"></div>`);
+  if(!HH)return box(`<h2>Haushalt</h2><div class="mu">Angemeldet als ${esc(auth.email||'')}. Einer von euch legt den gemeinsamen Haushalt an, der andere tritt mit dem Code bei.</div>
+   <button class="bt" style="margin-top:10px" data-act="mkhh">Neuen Haushalt anlegen</button>
+   <label class="f">…oder Einladungscode eingeben<input id="acc_code" placeholder="z. B. 3fa91c0d2b7e"></label><button class="bt sec" style="margin-top:8px" data-act="joinhh">Beitreten</button>
+   <div class="mu" style="margin-top:8px">Beim Beitreten werden die Daten auf diesem Gerät durch die gemeinsamen Daten ersetzt.</div><div id="acc_s" class="warn" style="margin-top:8px"></div>
+   <div style="margin-top:12px"><button class="bt sm dng" data-act="logout">Abmelden</button></div>`);
+  return box(`<h2>☁️ Verbunden</h2><div class="mu">Angemeldet als ${esc(auth.email||'')} · Status: ${esc(syncMsg||'…')}</div>
+   <h3>Einladungscode für deine Frau</h3><div style="font-size:22px;letter-spacing:1px;font-weight:600">${esc(HH.invite_code)}</div><div class="mu">Sie registriert sich auf ihrem Gerät, wählt „Beitreten“ und gibt den Code ein.</div>
+   <div class="row" style="margin-top:12px"><button class="bt sec" data-act="syncnow">Jetzt synchronisieren</button><button class="bt sm dng" data-act="logout">Abmelden</button></div><div id="acc_s" class="warn" style="margin-top:8px"></div>`)}
+const accS=t=>{const e=document.getElementById('acc_s');if(e)e.textContent=t};
+async function doAuth(kind){const m=(document.getElementById('acc_mail').value||'').trim(),p=document.getElementById('acc_pw').value||'';
+  if(!m||p.length<6)return accS('Bitte E-Mail und ein Passwort mit mindestens 6 Zeichen eingeben.');
+  accS('Einen Moment…');
+  try{const ok=await authCall(kind,m,p);if(!ok)return accS('Fast geschafft: Bitte bestätige die E-Mail (Link im Postfach) und melde dich danach an.');
+    await loadHH();render()}catch(e){accS(e.message)}}
+async function doCreate(){accS('Lege an…');try{const a=await rpc('create_household');HH=a[0];lastPushed={};lastTs='';await pushDiff();setSync('verbunden');render()}catch(e){accS(e.message)}}
+async function doJoin(){const c=(document.getElementById('acc_code').value||'').trim();if(!c)return accS('Bitte den Code eingeben.');
+  if(!confirm('Die Daten auf diesem Gerät werden durch die gemeinsamen Daten ersetzt. Fortfahren?'))return;
+  accS('Trete bei…');try{await rpc('join_household',{code:c});await loadHH();render()}catch(e){accS(e.message)}}
+function doLogout(){auth=null;HH=null;lastPushed={};lastTs='';saveAuth();setSync('');render()}
+
 /* ============ Grundgerüst ============ */
-const TABS=[['plan','📅','Plan'],['shop','🛒','Einkauf'],['recipes','📖','Rezepte'],['add','➕','Neu'],['profile','👤','Profile']];
+const TABS=[['plan','📅','Plan'],['shop','🛒','Einkauf'],['recipes','📖','Rezepte'],['favs','❤️','Favoriten'],['hist','📊','Historie'],['more','☰','Mehr']];
+const SUB=['add','profile','account'];
 function modal(h){document.getElementById('modal').innerHTML=`<div class="modal" data-act="bg"><div>${h}</div></div>`}
 function closeModal(){document.getElementById('modal').innerHTML=''}
 function render(){
-  document.getElementById('nav').innerHTML=TABS.map(([k,i,l])=>`<button class="${tab===k?'on':''}" data-act="tab" data-t="${k}"><b>${i}</b>${l}</button>`).join('');
+  document.getElementById('nav').innerHTML=TABS.map(([k,i,l])=>`<button class="${tab===k||(k==='more'&&SUB.includes(tab))?'on':''}" data-act="tab" data-t="${k}"><b>${i}</b>${l}</button>`).join('');
   const f=document.activeElement&&document.activeElement.id==='rq';
-  document.getElementById('app').innerHTML={plan:planTab,shop:shopTab,recipes:recipeTab,add:addTab,profile:profileTab}[tab]();
+  document.getElementById('app').innerHTML=(SUB.includes(tab)?'<button class="bt sm sec" style="margin-bottom:10px" data-act="tab" data-t="more">‹ Mehr</button>':'')+{plan:planTab,shop:shopTab,recipes:recipeTab,favs:favTab,hist:histTab,more:moreTab,add:addTab,profile:profileTab,account:accountTab}[tab]();
   if(f){const el=document.getElementById('rq');el.focus();el.setSelectionRange(el.value.length,el.value.length)}}
 
 document.addEventListener('click',ev=>{
@@ -450,9 +592,9 @@ document.addEventListener('click',ev=>{
    case'wk':weekOff+=+el.dataset.d;render();break;
    case'sug':suggest(k,el.dataset.cat);break;
    case'clear':delete S.plan[k];save();render();break;
-   case'fill':weekDays(weekOff).forEach((d,i)=>{const kk=iso(d);if(!(S.plan[kk]&&S.plan[kk].rid)){const c=candidates(kk,i<5?'schnell':'aufwendig');if(c.length){const e=entry(kk);e.rid=c[Math.floor(Math.random()*c.length)].id;e.addons={}}}});save();render();break;
+   case'fill':weekDays(weekOff).forEach((d,i)=>{const kk=iso(d);if(!(S.plan[kk]&&S.plan[kk].rid)){const c=candidates(kk,i<5?'schnell':'aufwendig');if(c.length){const e=entry(kk);e.rid=pickRand(c).id;e.addons={}}}});save();render();break;
    case'pick':{const e=S.plan[k]||{eaters:S.persons.map(p=>p.id)};const ps=eaterSet(e);
-     modal(`<div class="row sp"><h2 style="margin:0">Rezept wählen</h2><button class="bt sm sec" data-act="close">✕</button></div>`+recipes().map(r=>{const ok=ps.every(p=>canEat(p,r));return `<div class="card" ${ok?`data-act="setrec" data-k="${k}" data-id="${r.id}" style="cursor:pointer"`:'style="opacity:.45"'}><b>${esc(r.title)}</b> <span class="badge">${TYPES[r.type]}</span><div class="mu">${r.min} Min${ok?'':' · passt nicht zu den Mitessern'}</div></div>`}).join(''));break}
+     modal(`<div class="row sp"><h2 style="margin:0">Rezept wählen</h2><button class="bt sm sec" data-act="close">✕</button></div>`+recipes().slice().sort((a,b)=>!!S.favs[b.id]-!!S.favs[a.id]).map(r=>{const ok=ps.every(p=>canEat(p,r));return `<div class="card" ${ok?`data-act="setrec" data-k="${k}" data-id="${r.id}" style="cursor:pointer"`:'style="opacity:.45"'}><b>${S.favs[r.id]?'❤️ ':''}${esc(r.title)}</b> <span class="badge">${TYPES[r.type]}</span><div class="mu">${r.min} Min${ok?'':' · passt nicht zu den Mitessern'}</div></div>`}).join(''));break}
    case'setrec':{const e=entry(k);e.rid=el.dataset.id;e.addons={};save();closeModal();render();break}
    case'open':recipeModal(el.dataset.id);break;
    case'close':closeModal();break;
@@ -463,6 +605,14 @@ document.addEventListener('click',ev=>{
    case'delrec':if(confirm('Rezept löschen?')){S.custom=S.custom.filter(r=>r.id!==el.dataset.id);Object.values(S.plan).forEach(e=>{if(e.rid===el.dataset.id)e.rid=null});save();closeModal();render()}break;
    case'addp':S.persons.push({id:'p'+Date.now(),name:'Neue Person',age:'',diet:'alles',exclude:'',likes:'',protein:'',factor:1});save();render();break;
    case'delp':if(confirm('Person entfernen?')){S.persons=S.persons.filter(p=>p.id!==el.dataset.p);Object.values(S.plan).forEach(e=>e.eaters=e.eaters.filter(x=>x!==el.dataset.p));save();render()}break;
+   case'fav':toggleFav(el.dataset.id);break;
+   case'hmode':hmode=el.dataset.m;render();break;
+   case'login':doAuth('in');break;
+   case'register':doAuth('up');break;
+   case'mkhh':doCreate();break;
+   case'joinhh':doJoin();break;
+   case'logout':doLogout();break;
+   case'syncnow':accS('Synchronisiere…');pushDiff().then(()=>loadHH()).then(()=>{render()}).catch(e=>accS(e.message));break;
    case'copy':{const g=shopList();const t=Object.keys(g).map(k=>k+':\n'+g[k].map(x=>'- '+x.n+' '+x.txt).join('\n')).join('\n\n');(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>alert('Kopiert.')).catch(()=>prompt('Liste:',t));break}
    case'export':{const t=JSON.stringify(S);(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>alert('Daten in die Zwischenablage kopiert. Auf dem anderen Gerät „Importieren“ wählen und einfügen.')).catch(()=>prompt('Daten kopieren:',t));break}
    case'import':{const t=prompt('Exportierte Daten hier einfügen:');if(t){try{S=Object.assign(defaults(),JSON.parse(t));save();render()}catch(e){alert('Das waren keine gültigen Daten.')}}break}
@@ -477,7 +627,7 @@ document.addEventListener('change',ev=>{
   else if(a==='chk'){const ws=el.dataset.ws;S.checked[ws]=S.checked[ws]||{};S.checked[ws][el.dataset.n]=el.checked;save();render()}
   else if(a==='rcat'){rcat=el.value;render()}else if(a==='rtype'){rtype=el.value;render()}});
 document.addEventListener('input',ev=>{if(ev.target.id==='rq'){rq=ev.target.value;render()}if(ev.target.id==='f_i')updateWarn()});
-render();
+render();boot();
 </script>
 </body>
 </html>
