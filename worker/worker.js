@@ -10,7 +10,7 @@
  *      APP_TOKEN       = ein selbst gewähltes Zugangswort (das tragt ihr in der App ein)
  *      GEMINI_API_KEY  = kostenloser Key von aistudio.google.com (nur für Foto und als Fallback beim Link)
  *    Optional (Text):
- *      GEMINI_MODEL    = Modellname, falls der Standard nicht klappt (Standard: gemini-flash-latest)
+ *      GEMINI_MODEL    = Modellname, falls der Standard nicht klappt (Standard: gemini-2.5-flash)
  *      ALLOWED_ORIGIN  = Adresse eurer Seite, z. B. https://dein-name.github.io
  * 5. Die Worker-Adresse (https://essensplaner.<name>.workers.dev) und das Zugangswort
  *    in der App unter „Neu → Verbindung“ eintragen.
@@ -45,7 +45,7 @@ export default {
         const j = await r.json().catch(() => ({}));
         return out({
           status: r.status,
-          modell: env.GEMINI_MODEL || 'gemini-flash-latest (Standard)',
+          modell: env.GEMINI_MODEL || 'gemini-2.5-flash (Standard)',
           flash: (j.models || []).map((m) => m.name.replace('models/', '')).filter((n) => /flash/.test(n)),
           fehler: j.error && j.error.message,
         }, 200, h);
@@ -156,7 +156,7 @@ export async function fromPhoto(b64, mime, env) {
   return normalize(await gemini([{ text: PROMPT }, { inline_data: { mime_type: mime, data: b64 } }], env));
 }
 async function gemini(parts, env) {
-  const model = env.GEMINI_MODEL || 'gemini-flash-latest';
+  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
