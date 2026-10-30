@@ -36,6 +36,7 @@ export default {
     let body;
     try { body = await req.json(); } catch { return out({ error: 'Ungültige Anfrage' }, 400, h); }
     const path = new URL(req.url).pathname;
+    if (body && typeof body.model === 'string' && /^[a-z0-9.\-]+$/.test(body.model)) env = { ...env, GEMINI_MODEL: body.model };
     try {
       if (path === '/diag') {
         const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=100', {
