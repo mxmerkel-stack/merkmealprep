@@ -565,8 +565,7 @@ function profileTab(){
   <label class="f">Lieblingszutaten / Vorlieben<input data-pf="likes" data-p="${p.id}" value="${esc(p.likes)}"></label>
   <div class="mu" style="margin-top:10px">Isst standardmäßig mit an (gilt für neu angelegte Tage)</div><div class="row" style="margin-top:4px">${WD.map((w,i)=>`<label class="chip"><input type="checkbox" data-pday="${i}" data-p="${p.id}" ${(!p.days||p.days.includes(i))?'checked':''}>${w}</label>`).join('')}</div></div>`).join('')
   +`<button class="bt" data-act="addp">＋ Person hinzufügen</button>
-  <div class="card" style="margin-top:12px"><h2>Daten sichern / übertragen</h2><div class="mu">Bis die gemeinsame Cloud-Synchronisation steht, liegen die Daten im Browser dieses Geräts. Mit Export und Import könnt ihr sie zwischen Handy und PC übertragen.</div>
-  <div class="row" style="margin-top:8px"><button class="bt sm sec" data-act="export">Exportieren</button><button class="bt sm sec" data-act="import">Importieren</button></div></div>`}
+  `}
 
 
 /* ============ Favoriten & Historie ============ */
@@ -769,8 +768,6 @@ document.addEventListener('click',ev=>{
    case'resetrec':if(confirm('Eigene Änderungen verwerfen und das Original wiederherstellen?')){S.custom=S.custom.filter(r=>r.id!==el.dataset.id);save();recipeModal(el.dataset.id);render()}break;
    case'ics':downloadIcs();break;
    case'copy':{const g=shopList();const t=Object.keys(g).map(k=>k+':\n'+g[k].map(x=>'- '+x.n+' '+x.txt).join('\n')).join('\n\n');(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>alert('Kopiert.')).catch(()=>prompt('Liste:',t));break}
-   case'export':{const t=JSON.stringify(S);(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>alert('Daten in die Zwischenablage kopiert. Auf dem anderen Gerät „Importieren“ wählen und einfügen.')).catch(()=>prompt('Daten kopieren:',t));break}
-   case'import':{const t=prompt('Exportierte Daten hier einfügen:');if(t){try{S=Object.assign(defaults(),JSON.parse(t));save();render()}catch(e){alert('Das waren keine gültigen Daten.')}}break}
   }});
 document.addEventListener('change',ev=>{
   const el=ev.target;const a=el.dataset.act;
