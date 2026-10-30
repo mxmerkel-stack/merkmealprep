@@ -41,7 +41,8 @@ export default {
       if (path === '/photo') return out(await fromPhoto(body.image, body.mime || 'image/jpeg', env), 200, h);
       return out({ error: 'Unbekannter Pfad' }, 404, h);
     } catch (e) {
-      return out({ error: e.message }, 502, h);
+      const m = e && e.name === 'TimeoutError' ? 'Zeitüberschreitung – der Dienst hat nicht rechtzeitig geantwortet' : e.message;
+      return out({ error: m }, 502, h);
     }
   },
 };
@@ -58,6 +59,7 @@ export async function fromUrl(url, env) {
       'Accept-Language': 'de-DE,de;q=0.9',
     },
     redirect: 'follow',
+    signal: AbortSignal.timeout(15000),
   });
   if (!r.ok) throw new Error('Seite nicht abrufbar (' + r.status + ')');
   const html = await r.text();
@@ -146,6 +148,7 @@ async function gemini(parts, env) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
     body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } }),
+    signal: AbortSignal.timeout(40000),
   });
   if (!r.ok) throw new Error('KI-Dienst: Fehler ' + r.status + ' ' + (await r.text()).slice(0, 160));
   const d = await r.json();
