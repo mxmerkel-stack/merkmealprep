@@ -265,9 +265,21 @@ function candidates(k,cat){
   let c=pick(r=>r.cat===cat&&!used.has(r.id));
   if(!c.length)c=pick(r=>(cat==='aufwendig'||r.cat==='schnell')&&!used.has(r.id));
   if(!c.length)c=ok;return c}
-function suggest(k,cat){const c=candidates(k,cat);if(!c.length)return alert('Kein passendes Rezept für diese Mitesser gefunden.');
-  const e=entry(k);e.rid=pickRand(c).id;e.addons={};save();render()}
-
+function suggest(k,cat){
+  const e=entry(k),prev=e.rid;
+  let c=candidates(k,cat).filter(r=>r.id!==prev&&!(e.seen||[]).includes(r.id));
+  if(!c.length){e.seen=[];c=candidates(k,cat).filter(r=>r.id!==prev)}
+  if(!c.length)return alert('Kein weiteres passendes Rezept für diese Mitesser gefunden.');
+  if(prev)e.seen=[...(e.seen||[]),prev].slice(-20);
+  e.rid=pickRand(c).id;e.addons={};save();render()}
+function fillWeek(all){
+  const ds=weekDays(weekOff);
+  if(all)ds.forEach(d=>{const e=S.plan[iso(d)];if(e&&e.rid&&!e.lock){e.seen=[...(e.seen||[]),e.rid].slice(-20);e.rid=null;e.addons={}}});
+  ds.forEach((d,i)=>{const k=iso(d);if(S.plan[k]&&S.plan[k].rid)return;
+    const e=entry(k),cat=i<5?'schnell':'aufwendig';
+    let c=candidates(k,cat).filter(r=>!(e.seen||[]).includes(r.id));if(!c.length)c=candidates(k,cat);
+    if(c.length){e.rid=pickRand(c).id;e.addons={}}});
+  save();render()}
 function nutHtml(n,p){
   if(!n)return'';const goal=Number(p&&p.protein);
   return `<div class="nut"><span>${Math.round(n.k)} kcal</span><span>E ${Math.round(n.p)} g</span><span>KH ${Math.round(n.c)} g</span><span>F ${Math.round(n.f)} g</span></div>`}
@@ -287,7 +299,7 @@ function dayCard(d,wd){
       return `<div style="margin-top:8px"><div class="row sp"><b>${esc(p.name)}</b>${dsh.id!==r.id?`<span class="badge b">→ ${esc(dsh.title)}</span>`:''}</div>${extra}${nutHtml(n,p)}${pct!==null?`<div class="mu">${pct}% des Eiweißziels</div><div class="pb"><i style="width:${Math.min(pct,100)}%"></i></div>`:''}</div>`}).join('');
     const hint=r.type==='gemischt'&&new Set(ps.map(p=>dishFor(p,r)&&dishFor(p,r).id)).size>1?'<div class="warn">⚠ Zwei Gerichte nötig</div>':'';
     body=`<div class="row sp" style="margin-top:8px"><b data-act="open" data-id="${r.id}" style="cursor:pointer">${esc(r.title)} ${heart(r.id)}</b><span class="badge ${r.type==='gemischt'?'w':''}">${TYPES[r.type]}</span></div><div class="mu">${r.min} Min · ${r.cat}</div>${hint}${lines}
-    <div class="row" style="margin-top:10px"><button class="bt sm sec" data-act="sug" data-k="${k}" data-cat="${cat}">Neu vorschlagen</button><button class="bt sm sec" data-act="pick" data-k="${k}">Wählen</button><button class="bt sm dng" data-act="clear" data-k="${k}">Leeren</button></div>`;
+    <div class="row" style="margin-top:10px"><button class="bt sm sec" data-act="sug" data-k="${k}" data-cat="${cat}">🔄 Neu vorschlagen</button><button class="bt sm ${e.lock?'on':'sec'}" data-act="lock" data-k="${k}">📌 ${e.lock?'Fixiert':'Fixieren'}</button><button class="bt sm sec" data-act="pick" data-k="${k}">Wählen</button><button class="bt sm dng" data-act="clear" data-k="${k}">Leeren</button></div>`;
   }else body=`<div class="row" style="margin-top:10px"><button class="bt sm" data-act="sug" data-k="${k}" data-cat="${cat}">Vorschlag</button><button class="bt sm sec" data-act="pick" data-k="${k}">Rezept wählen</button></div>`;
   return `<div class="card"><div class="row sp"><h2 style="margin:0">${WD[wd]} ${pad(d.getDate())}.${pad(d.getMonth()+1)}.</h2><span class="badge ${cat==='schnell'?'':'w'}">${cat==='schnell'?'schnell':'aufwendiger'}</span></div><div class="row" style="margin-top:6px">${chips}</div>${body}</div>`}
 
@@ -295,7 +307,7 @@ function planTab(){
   const days=weekDays(weekOff);const a=days[0],b=days[6];
   return `<div class="wk"><button class="bt sm sec" data-act="wk" data-d="-1">‹</button><b>${pad(a.getDate())}.${pad(a.getMonth()+1)}. – ${pad(b.getDate())}.${pad(b.getMonth()+1)}.${weekOff===0?' (diese Woche)':''}</b><button class="bt sm sec" data-act="wk" data-d="1">›</button></div>`
    +days.map((d,i)=>dayCard(d,i)).join('')
-   +`<button class="bt" style="width:100%" data-act="fill">🎲 Ganze Woche vorschlagen (leere Tage)</button>`}
+   +`<div class="row"><button class="bt" style="flex:1" data-act="refill">🔄 Woche neu vorschlagen</button><button class="bt sec" style="flex:1" data-act="fill">Nur leere Tage füllen</button></div><div class="mu" style="margin-top:6px">📌 Fixierte Tage bleiben beim Neu-Vorschlagen erhalten.</div>`}
 
 /* ============ Einkaufsliste ============ */
 function shopList(){
@@ -592,7 +604,9 @@ document.addEventListener('click',ev=>{
    case'wk':weekOff+=+el.dataset.d;render();break;
    case'sug':suggest(k,el.dataset.cat);break;
    case'clear':delete S.plan[k];save();render();break;
-   case'fill':weekDays(weekOff).forEach((d,i)=>{const kk=iso(d);if(!(S.plan[kk]&&S.plan[kk].rid)){const c=candidates(kk,i<5?'schnell':'aufwendig');if(c.length){const e=entry(kk);e.rid=pickRand(c).id;e.addons={}}}});save();render();break;
+   case'fill':fillWeek(false);break;
+   case'refill':fillWeek(true);break;
+   case'lock':{const e=entry(k);e.lock=!e.lock;save();render();break};
    case'pick':{const e=S.plan[k]||{eaters:S.persons.map(p=>p.id)};const ps=eaterSet(e);
      modal(`<div class="row sp"><h2 style="margin:0">Rezept wählen</h2><button class="bt sm sec" data-act="close">✕</button></div>`+recipes().slice().sort((a,b)=>!!S.favs[b.id]-!!S.favs[a.id]).map(r=>{const ok=ps.every(p=>canEat(p,r));return `<div class="card" ${ok?`data-act="setrec" data-k="${k}" data-id="${r.id}" style="cursor:pointer"`:'style="opacity:.45"'}><b>${S.favs[r.id]?'❤️ ':''}${esc(r.title)}</b> <span class="badge">${TYPES[r.type]}</span><div class="mu">${r.min} Min${ok?'':' · passt nicht zu den Mitessern'}</div></div>`}).join(''));break}
    case'setrec':{const e=entry(k);e.rid=el.dataset.id;e.addons={};save();closeModal();render();break}
