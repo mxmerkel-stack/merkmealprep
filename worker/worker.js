@@ -52,6 +52,7 @@ export default {
         }, 200, h);
       }
       if (path === '/idea') return out(await ideas(body, env), 200, h);
+      if (path === '/nutri') return out(await nutri(body, env), 200, h);
       if (path === '/recipe') return out(await fromUrl(body.url, env), 200, h);
       if (path === '/photo') return out(await fromPhoto(body.image, body.mime || 'image/jpeg', env), 200, h);
       return out({ error: 'Unbekannter Pfad' }, 404, h);
@@ -201,5 +202,39 @@ export async function ideas(b, env) {
       who: clip(r.who, 80),
       diet: ['vegan', 'vegetarisch', 'fleisch'].includes(r.diet) ? r.diet : 'vegetarisch',
     })),
+  };
+}
+
+/* ---------- Nährwerte unbekannter Zutaten schätzen ---------- */
+export async function nutri(b, env) {
+  if (!env.GEMINI_API_KEY) throw new Error('Auf dem Server fehlt der GEMINI_API_KEY');
+  const names = (Array.isArray(b.names) ? b.names : []).map((n) => String(n).slice(0, 60)).filter(Boolean).slice(0, 15);
+  if (!names.length) throw new Error('Keine Zutaten übergeben');
+  const prompt =
+    'Gib typische Nährwerte für diese Zutaten an, jeweils pro 100 g (bei Flüssigkeiten pro 100 ml). ' +
+    'Rohe bzw. unverarbeitete Ware; bei trockenen Produkten (Nudeln, Reis, Linsen, Mehl) das Trockengewicht. Zutaten:\n' +
+    names.map((n, i) => `${i + 1}. ${n}`).join('\n') +
+    '\nAntworte NUR mit JSON: {"items":[{"name":"<genau wie oben>","k":kcal,"p":Eiweiß g,"c":Kohlenhydrate g,"f":Fett g,' +
+    '"aisle":"Obst & Gemüse|Kühlregal|Fleisch|Trockenwaren & Konserven|Brot & Backwaren|Vorrat & Gewürze",' +
+    '"stk":Gramm pro Stück, falls man die Zutat stückweise kauft, sonst 0,"ml":true wenn Flüssigkeit sonst false}]}. ' +
+    'Gewürze und getrocknete Kräuter: aisle "Vorrat & Gewürze".';
+  const j = await gemini([{ text: prompt }], env);
+  const arr = Array.isArray(j) ? j : Array.isArray(j && j.items) ? j.items : [];
+  const num = (v, max) => { const x = Number(v); return isFinite(x) ? Math.min(Math.max(x, 0), max) : 0; };
+  const AIS = ['Obst & Gemüse', 'Kühlregal', 'Fleisch', 'Trockenwaren & Konserven', 'Brot & Backwaren', 'Vorrat & Gewürze'];
+  return {
+    items: names.map((n, i) => {
+      const r = arr.find((x) => x && String(x.name).toLowerCase() === n.toLowerCase()) || arr[i] || {};
+      return {
+        name: n,
+        k: Math.round(num(r.k, 900)),
+        p: Math.round(num(r.p, 100) * 10) / 10,
+        c: Math.round(num(r.c, 100) * 10) / 10,
+        f: Math.round(num(r.f, 100) * 10) / 10,
+        aisle: AIS.includes(r.aisle) ? r.aisle : 'Sonstiges',
+        stk: Math.round(num(r.stk, 2000)),
+        ml: !!r.ml,
+      };
+    }),
   };
 }
