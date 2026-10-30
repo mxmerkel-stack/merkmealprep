@@ -224,14 +224,14 @@ const KEY='essensplaner_v1';
 const defaults=()=>({persons:[
  {id:'p1',name:'Maximilian',age:'',diet:'alles',exclude:'',likes:'',protein:'',factor:1},
  {id:'p2',name:'Partnerin',age:'',diet:'vegetarisch',exclude:'',likes:'',protein:'',factor:1}],
- custom:[],plan:{},checked:{},settings:{worker:'',token:''},favs:{},customIng:{}});
+ custom:[],plan:{},checked:{},settings:{worker:'',token:''},favs:{},customIng:{},ratings:{}});
 let S;
 try{S=Object.assign(defaults(),JSON.parse(localStorage.getItem(KEY)||'null')||{})}catch(e){S=defaults()}
 function applyCustomIng(){for(const n of Object.keys(S.customIng||{})){ING[n]=S.customIng[n];INGL[n.toLowerCase()]=n}}
 applyCustomIng();
 const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
 const save=()=>{saveLocal();schedulePush()};
-const recipes=()=>SEED.concat(S.custom);
+const recipes=()=>{const ids=new Set(S.custom.map(r=>r.id));return SEED.filter(r=>!ids.has(r.id)).concat(S.custom)};
 const rec=id=>recipes().find(r=>r.id===id);
 const person=id=>S.persons.find(p=>p.id===id);
 
@@ -258,11 +258,12 @@ function recNut(r){return nut(r.ings.map(i=>({...i,a:i.a/r.serv})))}
 /* ============ Wochenplan ============ */
 let weekOff=0,tab='plan';
 function weekDays(off){const d=new Date();d.setHours(12,0,0,0);const wd=(d.getDay()+6)%7;d.setDate(d.getDate()-wd+off*7);return [...Array(7)].map((_,i)=>{const x=new Date(d);x.setDate(d.getDate()+i);return x})}
-function entry(k){if(!S.plan[k])S.plan[k]={rid:null,eaters:S.persons.map(p=>p.id),addons:{}};return S.plan[k]}
+function defE(k){const wd=(new Date(k+'T12:00').getDay()+6)%7;const l=S.persons.filter(p=>!p.days||p.days.includes(wd)).map(p=>p.id);return l.length?l:S.persons.map(p=>p.id)}
+function entry(k){if(!S.plan[k])S.plan[k]={rid:null,eaters:defE(k),addons:{}};return S.plan[k]}
 function candidates(k,cat){
-  const e=S.plan[k]||{eaters:S.persons.map(p=>p.id)};const ps=eaterSet(e);
+  const e=S.plan[k]||{eaters:defE(k)};const ps=eaterSet(e);
   const used=new Set(weekDays(weekOff).map(d=>S.plan[iso(d)]&&S.plan[iso(d)].rid).filter(Boolean));
-  const ok=recipes().filter(r=>ps.every(p=>canEat(p,r)));
+  const ok0=recipes().filter(r=>ps.every(p=>canEat(p,r)));const liked=ok0.filter(r=>(S.ratings||{})[r.id]!==-1);const ok=liked.length?liked:ok0;
   const pick=(f)=>ok.filter(f);
   let c=pick(r=>r.cat===cat&&!used.has(r.id));
   if(!c.length)c=pick(r=>(cat==='aufwendig'||r.cat==='schnell')&&!used.has(r.id));
@@ -288,7 +289,9 @@ function nutHtml(n,p){
 
 function dayCard(d,wd){
   const k=iso(d),e=S.plan[k],cat=wd<5?'schnell':'aufwendig';
-  const eaters=e?e.eaters:S.persons.map(p=>p.id);
+  const eaters=e?e.eaters:defE(k);
+  const pd=new Date(d);pd.setDate(pd.getDate()-1);const pe=S.plan[iso(pd)];
+  const reste=pe&&pe.prep&&pe.rid&&rec(pe.rid)?`<div class="badge b" style="margin-top:6px">🍱 Mittag: Reste von „${esc(rec(pe.rid).title)}“</div>`:'';
   const chips=S.persons.map(p=>`<label class="chip"><input type="checkbox" data-act="eater" data-k="${k}" data-p="${p.id}" ${eaters.includes(p.id)?'checked':''}>${esc(p.name)}</label>`).join('');
   let body;const r=e&&e.rid?rec(e.rid):null;
   if(r){
@@ -301,21 +304,40 @@ function dayCard(d,wd){
       return `<div style="margin-top:8px"><div class="row sp"><b>${esc(p.name)}</b>${dsh.id!==r.id?`<span class="badge b">→ ${esc(dsh.title)}</span>`:''}</div>${extra}${nutHtml(n,p)}${pct!==null?`<div class="mu">${pct}% des Eiweißziels</div><div class="pb"><i style="width:${Math.min(pct,100)}%"></i></div>`:''}</div>`}).join('');
     const hint=r.type==='gemischt'&&new Set(ps.map(p=>dishFor(p,r)&&dishFor(p,r).id)).size>1?'<div class="warn">⚠ Zwei Gerichte nötig</div>':'';
     body=`<div class="row sp" style="margin-top:8px"><b data-act="open" data-id="${r.id}" style="cursor:pointer">${esc(r.title)} ${heart(r.id)}</b><span class="badge ${r.type==='gemischt'?'w':''}">${TYPES[r.type]}</span></div><div class="mu">${r.min} Min · ${r.cat}</div>${hint}${lines}
-    <div class="row" style="margin-top:10px"><button class="bt sm sec" data-act="sug" data-k="${k}" data-cat="${cat}">🔄 Neu vorschlagen</button><button class="bt sm ${e.lock?'on':'sec'}" data-act="lock" data-k="${k}">📌 ${e.lock?'Fixiert':'Fixieren'}</button><button class="bt sm sec" data-act="pick" data-k="${k}">Wählen</button><button class="bt sm dng" data-act="clear" data-k="${k}">Leeren</button></div>`;
+    <div class="row" style="margin-top:10px"><button class="bt sm sec" data-act="sug" data-k="${k}" data-cat="${cat}">🔄 Neu vorschlagen</button><button class="bt sm ${e.lock?'on':'sec'}" data-act="lock" data-k="${k}">📌 ${e.lock?'Fixiert':'Fixieren'}</button><button class="bt sm ${e.prep?'on':'sec'}" data-act="prep" data-k="${k}">🍱 ${e.prep?'Doppelt gekocht':'Doppelt kochen'}</button><button class="bt sm sec" data-act="pick" data-k="${k}">Wählen</button><button class="bt sm dng" data-act="clear" data-k="${k}">Leeren</button></div>`;
   }else body=`<div class="row" style="margin-top:10px"><button class="bt sm" data-act="sug" data-k="${k}" data-cat="${cat}">Vorschlag</button><button class="bt sm sec" data-act="pick" data-k="${k}">Rezept wählen</button></div>`;
-  return `<div class="card"><div class="row sp"><h2 style="margin:0">${WD[wd]} ${pad(d.getDate())}.${pad(d.getMonth()+1)}.</h2><span class="badge ${cat==='schnell'?'':'w'}">${cat==='schnell'?'schnell':'aufwendiger'}</span></div><div class="row" style="margin-top:6px">${chips}</div>${body}</div>`}
+  return `<div class="card"><div class="row sp"><h2 style="margin:0">${WD[wd]} ${pad(d.getDate())}.${pad(d.getMonth()+1)}.</h2><span class="badge ${cat==='schnell'?'':'w'}">${cat==='schnell'?'schnell':'aufwendiger'}</span></div>${reste}<div class="row" style="margin-top:6px">${chips}</div>${body}</div>`}
 
 function planTab(){
   const days=weekDays(weekOff);const a=days[0],b=days[6];
   return `<div class="wk"><button class="bt sm sec" data-act="wk" data-d="-1">‹</button><b>${pad(a.getDate())}.${pad(a.getMonth()+1)}. – ${pad(b.getDate())}.${pad(b.getMonth()+1)}.${weekOff===0?' (diese Woche)':''}</b><button class="bt sm sec" data-act="wk" data-d="1">›</button></div>`
-   +days.map((d,i)=>dayCard(d,i)).join('')
-   +`<div class="row"><button class="bt" style="flex:1" data-act="refill">🔄 Woche neu vorschlagen</button><button class="bt sec" style="flex:1" data-act="fill">Nur leere Tage füllen</button></div><div class="mu" style="margin-top:6px">📌 Fixierte Tage bleiben beim Neu-Vorschlagen erhalten.</div>`}
+   +days.map((d,i)=>dayCard(d,i)).join('')+weekSummary()
+   +`<div class="row"><button class="bt" style="flex:1" data-act="refill">🔄 Woche neu vorschlagen</button><button class="bt sec" style="flex:1" data-act="fill">Nur leere Tage füllen</button></div><div class="mu" style="margin-top:6px">📌 Fixierte Tage bleiben beim Neu-Vorschlagen erhalten.</div>
+   <div class="row" style="margin-top:10px"><button class="bt sec" style="flex:1" data-act="ics">📅 Woche in den Kalender (.ics)</button></div>`}
+function weekSummary(){
+  const ds=weekDays(weekOff);
+  const rows=S.persons.map(p=>{let t={k:0,p:0,c:0,f:0,unk:[]},n=0;ds.forEach(d=>{const e=S.plan[iso(d)];if(!e||!e.rid||!(e.eaters||[]).includes(p.id))return;const x=personNut(e,p);if(x){t=addN(t,x);n++}});return {p,t,n}}).filter(x=>x.n);
+  if(!rows.length)return '';
+  return `<div class="card"><h2>📊 Wochenübersicht</h2><div class="mu">Durchschnitt pro geplantem Abendessen (ohne Frühstück, Mittag und Reste).</div>`+rows.map(({p,t,n})=>{const a={k:t.k/n,p:t.p/n,c:t.c/n,f:t.f/n};const goal=Number(p.protein);const pct=goal?Math.round(a.p/goal*100):null;
+    return `<div style="margin-top:8px"><b>${esc(p.name)}</b> <span class="mu">(${n} ${n===1?'Tag':'Tage'})</span>${nutHtml(a)}${pct!==null?`<div class="mu">Eiweiß: ${pct}% des Tagesziels pro Abendessen</div><div class="pb"><i style="width:${Math.min(pct,100)}%"></i></div>`:''}</div>`}).join('')+'</div>'}
+const icsEsc=t=>String(t).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');
+const icsFold=l=>{const c=Array.from(l);if(c.length<=60)return l;const o=[];for(let i=0;i<c.length;i+=60)o.push((i?' ':'')+c.slice(i,i+60).join(''));return o.join('\r\n')};
+function buildIcs(){
+  const now=new Date(),st=now.getUTCFullYear()+pad(now.getUTCMonth()+1)+pad(now.getUTCDate())+'T'+pad(now.getUTCHours())+pad(now.getUTCMinutes())+pad(now.getUTCSeconds())+'Z';
+  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//MerkMealPrep//DE','CALSCALE:GREGORIAN','METHOD:PUBLISH'];let n=0;
+  weekDays(weekOff).forEach(d=>{const k=iso(d),e=S.plan[k];if(!e||!e.rid)return;const r=rec(e.rid);if(!r)return;n++;const ymd=k.replace(/-/g,'');
+    const who=eaterSet(e).map(p=>{const dsh=dishFor(p,r);if(!dsh)return p.name+': –';const ad=addonOf(e,p,dsh),nu=personNut(e,p);return p.name+': '+(dsh.id!==r.id?dsh.title+' ':'')+(ad?'mit '+ad.label+' ':'')+(nu?'('+Math.round(nu.k)+' kcal, '+Math.round(nu.p)+' g Eiweiß)':'')}).join('\n');
+    const desc=who+(e.prep?'\n🍱 Doppelt gekocht – Reste für morgen':'')+'\n\nZutaten (für '+r.serv+' Portionen):\n'+r.ings.map(ingLine).join('\n');
+    ['BEGIN:VEVENT','UID:essensplan-'+k+'@merkmealprep','DTSTAMP:'+st,'DTSTART:'+ymd+'T183000','DTEND:'+ymd+'T193000','SUMMARY:'+icsEsc('🍽 '+r.title),'DESCRIPTION:'+icsEsc(desc),'END:VEVENT'].forEach(x=>L.push(x))});
+  L.push('END:VCALENDAR');return {n,text:L.map(icsFold).join('\r\n')+'\r\n'}}
+function downloadIcs(){const x=buildIcs();if(!x.n)return alert('Diese Woche ist noch nichts geplant.');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([x.text],{type:'text/calendar;charset=utf-8'}));a.download='essensplan-'+iso(weekDays(weekOff)[0])+'.ics';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
 
 /* ============ Einkaufsliste ============ */
 function shopList(){
   const tot={},unk={};const add=(i,x)=>{if(!ING[i.n]){const k=i.n+'|'+i.u;unk[k]=(unk[k]||0)+i.a*x;return}const g=grams(i)*x;if(!g)return;tot[i.n]=(tot[i.n]||0)+g};
   for(const d of weekDays(weekOff)){const e=S.plan[iso(d)];if(!e||!e.rid)continue;const r=rec(e.rid);if(!r)continue;
-    for(const p of eaterSet(e)){const dsh=dishFor(p,r);if(!dsh)continue;const f=Number(p.factor)||1;
+    for(const p of eaterSet(e)){const dsh=dishFor(p,r);if(!dsh)continue;const f=(Number(p.factor)||1)*(e.prep?2:1);
       dsh.ings.forEach(i=>add(i,f/dsh.serv));const ad=addonOf(e,p,dsh);if(ad)ad.ings.forEach(i=>add(i,f))}}
   const groups={};
   for(const n of Object.keys(tot)){const d=ING[n]||{a:'Sonstiges'};const g=tot[n];let txt;
@@ -344,6 +366,11 @@ function recipeTab(){
    <button class="bt sm" style="margin-top:8px" data-act="newrec">＋ Neues Rezept</button></div>`
   +list.map(r=>{const n=recNut(r);return `<div class="card" data-act="open" data-id="${r.id}" style="cursor:pointer"><div class="row sp"><b>${esc(r.title)} ${heart(r.id)}</b><span class="badge ${r.type==='gemischt'?'w':''}">${TYPES[r.type]}</span></div><div class="mu">${r.min} Min · ${r.cat} · ${r.serv} Portionen · ${r.diet}</div>${nutHtml(n)}</div>`}).join('')}
 
+const fmtAmt=a=>String(Math.round(a*100)/100);
+const ingLine=i=>fmtAmt(i.a)+' '+i.u+' '+i.n;
+function toPre(r){return {id:r.id,title:r.title,serv:r.serv,min:r.min,cat:r.cat,type:r.type,diet:r.diet,ings:r.ings.map(ingLine).join('\n'),
+  addons:(r.addons||[]).map(a=>a.label+'; '+a.diet+'; '+a.ings.map(ingLine).join(', ')).join('\n'),pair:r.pair||'',steps:(r.steps||[]).join('\n')}}
+let editId=null;
 function recipeModal(id){
   const r=rec(id);if(!r)return;const n=recNut(r);
   const ings=r.ings.map(i=>`<li>${Math.round(i.a*10)/10} ${i.u==='Stk'?'':i.u+' '}${esc(i.n)}${ING[i.n]?'':' <span class="warn">(unbekannt – ohne Nährwerte)</span>'}</li>`).join('');
@@ -351,7 +378,7 @@ function recipeModal(id){
   const ads=(r.addons||[]).map(a=>{const an=addN(n,nut(a.ings));return `<div style="margin-top:6px"><b>${esc(a.label)}</b> <span class="badge">${a.diet}</span>${nutHtml(an)}</div>`}).join('');
   modal(`<div class="row sp"><h2 style="margin:0">${esc(r.title)} ${heart(r.id)}</h2><button class="bt sm sec" data-act="close">✕</button></div>
   <div class="row" style="margin-top:6px"><span class="badge ${r.type==='gemischt'?'w':''}">${TYPES[r.type]}</span><span class="badge">${r.diet}</span><span class="mu">${r.min} Min · ${r.serv} Portionen</span></div>
-  <div class="mu">${TIPS[r.type]}</div>
+  <div class="row sp"><div class="mu">${TIPS[r.type]}</div>${rateBtns(r.id)}</div>
   <h3>Nährwerte pro Portion${r.addons&&r.addons.length?' (Basis)':''}</h3>${nutHtml(n)}
   ${ads?`<h3>Mit Zusatzkomponente</h3>${ads}`:''}
   ${pair?`<h3>Vegetarisches Pendant</h3><div data-act="open" data-id="${pair.id}" style="cursor:pointer;color:var(--g)"><b>${esc(pair.title)}</b></div>`:''}
@@ -359,10 +386,11 @@ function recipeModal(id){
   ${(()=>{const unk=[...new Set(r.ings.filter(i=>!ING[i.n]).map(i=>i.n))];return unk.length?`<div id="d_n"><button class="bt sm sec" data-act="nutri" data-c="d_n" data-rid="${r.id}" data-names="${esc(JSON.stringify(unk))}">🔍 Nährwerte ergänzen (${unk.length})</button></div>`:''})()}
   ${(r.addons||[]).map(a=>`<div class="mu"><b>${esc(a.label)}</b> (pro Person): ${a.ings.map(i=>Math.round(i.a*10)/10+(i.u==='Stk'?' ':' '+i.u+' ')+i.n).join(', ')}</div>`).join('')}
   <h3>Zubereitung</h3><ol>${(r.steps||[]).map(s=>`<li>${esc(s)}</li>`).join('')}</ol>
-  ${r.seed?'':`<button class="bt dng sm" data-act="delrec" data-id="${r.id}">Rezept löschen</button>`}`)}
+  <div class="row" style="margin-top:14px"><button class="bt sm sec" data-act="editrec" data-id="${r.id}">✏️ Bearbeiten</button>${SEED.some(x=>x.id===r.id)?(r.seed?'':`<button class="bt sm dng" data-act="resetrec" data-id="${r.id}">Original wiederherstellen</button>`):`<button class="bt dng sm" data-act="delrec" data-id="${r.id}">Rezept löschen</button>`}</div>`)}
 
 function recipeForm(pre){
-  modal(`<div class="row sp"><h2 style="margin:0">Neues Rezept</h2><button class="bt sm sec" data-act="close">✕</button></div>
+  editId=(pre&&pre.id)||null;
+  modal(`<div class="row sp"><h2 style="margin:0">${editId?'Rezept bearbeiten':'Neues Rezept'}</h2><button class="bt sm sec" data-act="close">✕</button></div>
   <label class="f">Titel<input id="f_t"></label>
   <div class="row"><label class="f" style="flex:1">Zeit<select id="f_c"><option value="schnell">schnell (bis 30 Min)</option><option value="aufwendig">aufwendiger</option></select></label>
   <label class="f" style="flex:1">Minuten<input id="f_m" type="number" value="30"></label>
@@ -376,7 +404,7 @@ function recipeForm(pre){
   <div id="f_w" class="warn"></div><div id="f_n"></div>
   <button class="bt" style="margin-top:10px;width:100%" data-act="saverec">Speichern</button>`);
   if(pre){const set=(id,v)=>{document.getElementById(id).value=v};
-    set('f_t',pre.title||'');set('f_s',pre.serv||2);set('f_m',pre.min||30);set('f_c',(pre.min||30)>30?'aufwendig':'schnell');
+    set('f_t',pre.title||'');set('f_s',pre.serv||2);set('f_m',pre.min||30);set('f_c',pre.cat||((pre.min||30)>30?'aufwendig':'schnell'));set('f_ty',pre.type||'alle');set('f_a',pre.addons||'');set('f_p',pre.pair||'');
     set('f_i',pre.ings||'');set('f_st',pre.steps||'');
     const L=P((pre.ings||'').split('\n').filter(x=>x.trim())).map(i=>i.n);
     set('f_d',pre.diet&&['vegan','vegetarisch','fleisch'].includes(pre.diet)?pre.diet:L.some(n=>['Hackfleisch','Hähnchenbrust','Rindersteak'].includes(n))?'fleisch':L.some(n=>['Ei','Milch','Sahne','Butter','Feta','Halloumi','Mozzarella','Joghurt','Käse'].includes(n))?'vegetarisch':'vegan');
@@ -392,10 +420,10 @@ function saveRecipe(){
   if(!title||!ings.length){document.getElementById('f_w').textContent='Titel und mindestens eine Zutat nötig.';return}
   const addons=v('f_a').split('\n').filter(x=>x.trim()).map(l=>{const [label,diet,rest]=l.split(';').map(s=>s.trim());return {label,diet:['fleisch','vegetarisch','vegan'].includes(diet)?diet:'vegetarisch',ings:P((rest||'').split(',').map(s=>s.trim()))}}).filter(a=>a.label);
   const type=v('f_ty');
-  const r={id:'c'+Date.now(),title,cat:v('f_c'),min:+v('f_m')||30,serv:Math.max(1,+v('f_s')||2),type,diet:v('f_d'),ings,steps:v('f_st').split('\n').filter(x=>x.trim()),addons:type==='modular'?addons:[],pair:type==='gemischt'?v('f_p'):''};
+  const r={id:editId||'c'+Date.now(),title,cat:v('f_c'),min:+v('f_m')||30,serv:Math.max(1,+v('f_s')||2),type,diet:v('f_d'),ings,steps:v('f_st').split('\n').filter(x=>x.trim()),addons:type==='modular'?addons:[],pair:type==='gemischt'?v('f_p'):''};
   if(type==='gemischt'&&!r.pair){document.getElementById('f_w').textContent='Bei „Gemischt“ bitte ein vegetarisches Pendant wählen.';return}
   if(type==='modular'&&RDIET[r.diet]>1){document.getElementById('f_w').textContent='Bei „Modular“ muss die Basis vegan oder vegetarisch sein.';return}
-  S.custom.push(r);save();closeModal();render()}
+  S.custom=S.custom.filter(x=>x.id!==r.id);S.custom.push(r);const was=editId;editId=null;save();closeModal();render();if(was)recipeModal(r.id)}
 
 
 
@@ -534,15 +562,19 @@ function profileTab(){
   <div class="row"><label class="f" style="flex:1">Eiweißziel g/Tag<input type="number" data-pf="protein" data-p="${p.id}" value="${esc(p.protein)}"></label>
   <label class="f" style="flex:1">Portionsfaktor<input type="number" step="0.25" data-pf="factor" data-p="${p.id}" value="${esc(p.factor)}"></label></div>
   <label class="f">Nicht essen / Allergien (Zutaten, mit Komma)<input data-pf="exclude" data-p="${p.id}" value="${esc(p.exclude)}" placeholder="z. B. Pilz, Champignons"></label>
-  <label class="f">Lieblingszutaten / Vorlieben<input data-pf="likes" data-p="${p.id}" value="${esc(p.likes)}"></label></div>`).join('')
+  <label class="f">Lieblingszutaten / Vorlieben<input data-pf="likes" data-p="${p.id}" value="${esc(p.likes)}"></label>
+  <div class="mu" style="margin-top:10px">Isst standardmäßig mit an (gilt für neu angelegte Tage)</div><div class="row" style="margin-top:4px">${WD.map((w,i)=>`<label class="chip"><input type="checkbox" data-pday="${i}" data-p="${p.id}" ${(!p.days||p.days.includes(i))?'checked':''}>${w}</label>`).join('')}</div></div>`).join('')
   +`<button class="bt" data-act="addp">＋ Person hinzufügen</button>
   <div class="card" style="margin-top:12px"><h2>Daten sichern / übertragen</h2><div class="mu">Bis die gemeinsame Cloud-Synchronisation steht, liegen die Daten im Browser dieses Geräts. Mit Export und Import könnt ihr sie zwischen Handy und PC übertragen.</div>
   <div class="row" style="margin-top:8px"><button class="bt sm sec" data-act="export">Exportieren</button><button class="bt sm sec" data-act="import">Importieren</button></div></div>`}
 
 
 /* ============ Favoriten & Historie ============ */
+const rateBtns=id=>`<span style="white-space:nowrap"><span class="hrt" data-act="rate" data-id="${id}" data-v="1" style="opacity:${(S.ratings||{})[id]===1?1:.3}">👍</span><span class="hrt" data-act="rate" data-id="${id}" data-v="-1" style="opacity:${(S.ratings||{})[id]===-1?1:.3}">👎</span></span>`;
+function rateRecipe(id,v){S.ratings=S.ratings||{};if(S.ratings[id]===v)delete S.ratings[id];else S.ratings[id]=v;save();
+  document.querySelectorAll('[data-act="rate"]').forEach(e=>{if(e.dataset.id===id)e.style.opacity=S.ratings[id]===+e.dataset.v?1:.3})}
 const heart=id=>`<span class="hrt" data-act="fav" data-id="${id}">${S.favs[id]?'❤️':'🤍'}</span>`;
-function pickRand(c){const pool=[];c.forEach(r=>{pool.push(r);if(S.favs[r.id])pool.push(r)});return pool[Math.floor(Math.random()*pool.length)]}
+function pickRand(c){const pool=[];c.forEach(r=>{pool.push(r);if(S.favs[r.id])pool.push(r);if((S.ratings||{})[r.id]===1)pool.push(r)});return pool[Math.floor(Math.random()*pool.length)]}
 function toggleFav(id){if(S.favs[id])delete S.favs[id];else S.favs[id]=true;save();
   document.querySelectorAll('[data-act="fav"]').forEach(e=>{if(e.dataset.id===id)e.textContent=S.favs[id]?'❤️':'🤍'});if(tab==='favs')render()}
 function favTab(){const l=recipes().filter(r=>S.favs[r.id]).sort((a,b)=>a.title.localeCompare(b.title));
@@ -559,11 +591,11 @@ function histTab(){
   if(hmode==='verlauf'){
     if(!rows.length)return seg+'<div class="card mu">Noch leer. Der Verlauf füllt sich automatisch, sobald geplante Tage vergangen sind.</div>';
     return seg+rows.map(x=>{const wd=WD[(new Date(x.k+'T12:00').getDay()+6)%7];const who=eaterSet(x.e).map(p=>esc(p.name)).join(', ');
-      return `<div class="card"><div class="row sp"><b data-act="open" data-id="${x.r.id}" style="cursor:pointer">${esc(x.r.title)}</b><span class="mu">${wd} ${dmy(x.k)}</span></div><div class="mu">${who||'–'} · ${ago(x.k)}</div></div>`}).join('')}
+      return `<div class="card"><div class="row sp"><b data-act="open" data-id="${x.r.id}" style="cursor:pointer">${esc(x.r.title)}</b><span class="mu">${wd} ${dmy(x.k)}</span></div><div class="row sp"><span class="mu">${who||'–'} · ${ago(x.k)}</span>${rateBtns(x.r.id)}</div></div>`}).join('')}
   const stat={};rows.forEach(x=>{const t=stat[x.r.id]||(stat[x.r.id]={r:x.r,n:0,last:x.k});t.n++;if(x.k>t.last)t.last=x.k});
   if(hmode==='top'){const l=Object.values(stat).sort((a,b)=>b.n-a.n||b.last.localeCompare(a.last));
     if(!l.length)return seg+'<div class="card mu">Noch keine Daten.</div>';
-    return seg+l.map((t,i)=>`<div class="card"><div class="row sp"><b data-act="open" data-id="${t.r.id}" style="cursor:pointer">${i+1}. ${esc(t.r.title)}</b><span class="badge">${t.n}×</span></div><div class="mu">zuletzt ${dmy(t.last)} (${ago(t.last)})</div></div>`).join('')}
+    return seg+l.map((t,i)=>`<div class="card"><div class="row sp"><b data-act="open" data-id="${t.r.id}" style="cursor:pointer">${i+1}. ${esc(t.r.title)}</b><span class="badge">${t.n}×</span></div><div class="row sp"><span class="mu">zuletzt ${dmy(t.last)} (${ago(t.last)})</span>${rateBtns(t.r.id)}</div></div>`).join('')}
   const all=recipes().map(r=>({r,last:stat[r.id]&&stat[r.id].last}));
   const eaten=all.filter(a=>a.last).sort((a,b)=>a.last.localeCompare(b.last)),never=all.filter(a=>!a.last);
   return seg+'<div class="mu" style="margin-bottom:8px">Am längsten her zuerst – gut, um Abwechslung zu finden.</div>'+eaten.concat(never).map(a=>`<div class="card"><div class="row sp"><b data-act="open" data-id="${a.r.id}" style="cursor:pointer">${esc(a.r.title)}</b><span class="mu">${a.last?ago(a.last):'noch nie'}</span></div>${a.last?`<div class="mu">${dmy(a.last)}</div>`:''}</div>`).join('')}
@@ -607,6 +639,7 @@ function localRows(){const m={};
   Object.keys(S.plan).forEach(k=>m['plan|'+k]={kind:'plan',key:k,data:S.plan[k]});
   Object.keys(S.favs||{}).forEach(id=>{if(S.favs[id])m['fav|'+id]={kind:'fav',key:id,data:{}}});
   Object.keys(S.checked).forEach(ws=>m['check|'+ws]={kind:'check',key:ws,data:S.checked[ws]});
+  Object.keys(S.ratings||{}).forEach(id=>m['rating|'+id]={kind:'rating',key:id,data:{v:S.ratings[id]}});
   Object.keys(S.customIng||{}).forEach(n=>m['ing|'+n]={kind:'ing',key:n,data:S.customIng[n]});
   if(S.settings&&(S.settings.worker||S.settings.token))m['setting|worker']={kind:'setting',key:'worker',data:S.settings};
   return m}
@@ -632,7 +665,7 @@ async function poll(){if(!cloudOn()||pushing||pt)return;
 function applyRows(rows,full){
   const kinds=new Set(rows.map(r=>r.kind));
   S.persons.forEach((p,i)=>{if(p.o==null)p.o=i});
-  if(full){lastTs='';if(kinds.has('person'))S.persons=[];if(kinds.has('recipe'))S.custom=[];if(kinds.has('plan'))S.plan={};if(kinds.has('fav'))S.favs={};if(kinds.has('check'))S.checked={};if(kinds.has('ing'))S.customIng={}}
+  if(full){lastTs='';if(kinds.has('person'))S.persons=[];if(kinds.has('recipe'))S.custom=[];if(kinds.has('plan'))S.plan={};if(kinds.has('fav'))S.favs={};if(kinds.has('check'))S.checked={};if(kinds.has('ing'))S.customIng={};if(kinds.has('rating'))S.ratings={}}
   let changed=false;
   for(const r of rows){const id=r.kind+'|'+r.key;if(r.updated_at>lastTs)lastTs=r.updated_at;
     const js=r.deleted?'DEL':canon(r.data);if(!full&&lastPushed[id]===js)continue;
@@ -643,6 +676,7 @@ function applyRows(rows,full){
       case'plan':if(r.deleted)delete S.plan[r.key];else S.plan[r.key]=r.data;break;
       case'fav':if(r.deleted)delete S.favs[r.key];else S.favs[r.key]=true;break;
       case'check':if(r.deleted)delete S.checked[r.key];else S.checked[r.key]=r.data;break;
+      case'rating':S.ratings=S.ratings||{};if(r.deleted)delete S.ratings[r.key];else S.ratings[r.key]=r.data.v;break;
       case'ing':S.customIng=S.customIng||{};if(r.deleted){delete S.customIng[r.key];delete ING[r.key]}else S.customIng[r.key]=r.data;break;
       case'setting':if(!r.deleted)S.settings=r.data;break}}
   applyCustomIng();
@@ -704,7 +738,7 @@ document.addEventListener('click',ev=>{
    case'fill':fillWeek(false);break;
    case'refill':fillWeek(true);break;
    case'lock':{const e=entry(k);e.lock=!e.lock;save();render();break};
-   case'pick':{const e=S.plan[k]||{eaters:S.persons.map(p=>p.id)};const ps=eaterSet(e);
+   case'pick':{const e=S.plan[k]||{eaters:defE(k)};const ps=eaterSet(e);
      modal(`<div class="row sp"><h2 style="margin:0">Rezept wählen</h2><button class="bt sm sec" data-act="close">✕</button></div>`+recipes().slice().sort((a,b)=>!!S.favs[b.id]-!!S.favs[a.id]).map(r=>{const ok=ps.every(p=>canEat(p,r));return `<div class="card" ${ok?`data-act="setrec" data-k="${k}" data-id="${r.id}" style="cursor:pointer"`:'style="opacity:.45"'}><b>${S.favs[r.id]?'❤️ ':''}${esc(r.title)}</b> <span class="badge">${TYPES[r.type]}</span><div class="mu">${r.min} Min${ok?'':' · passt nicht zu den Mitessern'}</div></div>`}).join(''));break}
    case'setrec':{const e=entry(k);e.rid=el.dataset.id;e.addons={};save();closeModal();render();break}
    case'open':recipeModal(el.dataset.id);break;
@@ -729,6 +763,11 @@ document.addEventListener('click',ev=>{
    case'genadopt':{const x=gen.ai&&gen.ai[+el.dataset.i];if(x)recipeForm({title:x.title,serv:x.serv,min:x.min,ings:x.ings.join('\n'),steps:x.steps.join('\n'),diet:x.diet});break}
    case'nutri':nutriAsk(el.dataset.c,JSON.parse(el.dataset.names),el.dataset.rid);break;
    case'ntsave':ntSave(el);break;
+   case'prep':{const e=entry(k);e.prep=!e.prep;save();render();break}
+   case'rate':rateRecipe(el.dataset.id,+el.dataset.v);break;
+   case'editrec':{const r=rec(el.dataset.id);if(r)recipeForm(toPre(r));break}
+   case'resetrec':if(confirm('Eigene Änderungen verwerfen und das Original wiederherstellen?')){S.custom=S.custom.filter(r=>r.id!==el.dataset.id);save();recipeModal(el.dataset.id);render()}break;
+   case'ics':downloadIcs();break;
    case'copy':{const g=shopList();const t=Object.keys(g).map(k=>k+':\n'+g[k].map(x=>'- '+x.n+' '+x.txt).join('\n')).join('\n\n');(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>alert('Kopiert.')).catch(()=>prompt('Liste:',t));break}
    case'export':{const t=JSON.stringify(S);(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>alert('Daten in die Zwischenablage kopiert. Auf dem anderen Gerät „Importieren“ wählen und einfügen.')).catch(()=>prompt('Daten kopieren:',t));break}
    case'import':{const t=prompt('Exportierte Daten hier einfügen:');if(t){try{S=Object.assign(defaults(),JSON.parse(t));save();render()}catch(e){alert('Das waren keine gültigen Daten.')}}break}
@@ -738,6 +777,7 @@ document.addEventListener('change',ev=>{
   if(a==='imp-photo'){doPhoto(el.files&&el.files[0]);return}
   if(a==='geneater'){const id=el.dataset.p,cur=genIds();gen.eaters=el.checked?[...new Set([...cur,id])]:cur.filter(x=>x!==id);return}
   if(el.dataset.set){S.settings=S.settings||{};S.settings[el.dataset.set]=el.value.trim();save();return}
+  if(el.dataset.pday!==undefined){const p=person(el.dataset.p);if(p){const cur=p.days||[0,1,2,3,4,5,6],i=+el.dataset.pday;p.days=el.checked?[...new Set([...cur,i])].sort():cur.filter(x=>x!==i);save()}return}
   if(el.dataset.pf){const p=person(el.dataset.p);if(p){p[el.dataset.pf]=el.type==='number'&&el.dataset.pf==='factor'?(parseFloat(el.value)||1):el.value;save();if(el.dataset.pf==='name'||el.dataset.pf==='diet')render()}return}
   if(a==='eater'){const e=entry(el.dataset.k);const id=el.dataset.p;e.eaters=el.checked?[...new Set([...e.eaters,id])]:e.eaters.filter(x=>x!==id);save();render()}
   else if(a==='addon'){const e=entry(el.dataset.k);e.addons=e.addons||{};e.addons[el.dataset.p]=+el.value;save();render()}
