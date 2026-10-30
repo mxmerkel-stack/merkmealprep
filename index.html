@@ -336,7 +336,7 @@ function shopTab(){
 let rq='',rcat='',rtype='';
 function recipeTab(){
   const list=recipes().filter(r=>(!rq||r.title.toLowerCase().includes(rq.toLowerCase()))&&(!rcat||r.cat===rcat)&&(!rtype||r.type===rtype));
-  return `<div class="card"><div class="row"><input id="rq" placeholder="Suchen…" value="${esc(rq)}" style="flex:1;min-width:140px">
+  return genCard()+`<div class="card"><div class="row"><input id="rq" placeholder="Suchen…" value="${esc(rq)}" style="flex:1;min-width:140px">
    <select data-act="rcat"><option value="">alle Zeiten</option><option value="schnell" ${rcat==='schnell'?'selected':''}>schnell</option><option value="aufwendig" ${rcat==='aufwendig'?'selected':''}>aufwendiger</option></select>
    <select data-act="rtype"><option value="">alle Typen</option>${Object.entries(TYPES).map(([k,v])=>`<option value="${k}" ${rtype===k?'selected':''}>${v}</option>`).join('')}</select></div>
    <button class="bt sm" style="margin-top:8px" data-act="newrec">＋ Neues Rezept</button></div>`
@@ -376,7 +376,7 @@ function recipeForm(pre){
     set('f_t',pre.title||'');set('f_s',pre.serv||2);set('f_m',pre.min||30);set('f_c',(pre.min||30)>30?'aufwendig':'schnell');
     set('f_i',pre.ings||'');set('f_st',pre.steps||'');
     const L=P((pre.ings||'').split('\n').filter(x=>x.trim())).map(i=>i.n);
-    set('f_d',L.some(n=>['Hackfleisch','Hähnchenbrust','Rindersteak'].includes(n))?'fleisch':L.some(n=>['Ei','Milch','Sahne','Butter','Feta','Halloumi','Mozzarella','Joghurt','Käse'].includes(n))?'vegetarisch':'vegan');
+    set('f_d',pre.diet&&['vegan','vegetarisch','fleisch'].includes(pre.diet)?pre.diet:L.some(n=>['Hackfleisch','Hähnchenbrust','Rindersteak'].includes(n))?'fleisch':L.some(n=>['Ei','Milch','Sahne','Butter','Feta','Halloumi','Mozzarella','Joghurt','Käse'].includes(n))?'vegetarisch':'vegan');
     updateWarn()}}
 function updateWarn(){const t=document.getElementById('f_i'),w=document.getElementById('f_w');if(!t||!w)return;
   const u=[...new Set(P(t.value.split('\n').filter(x=>x.trim())).filter(i=>!ING[i.n]).map(i=>i.n))];
@@ -393,6 +393,71 @@ function saveRecipe(){
   if(type==='modular'&&RDIET[r.diet]>1){document.getElementById('f_w').textContent='Bei „Modular“ muss die Basis vegan oder vegetarisch sein.';return}
   S.custom.push(r);save();closeModal();render()}
 
+
+
+/* ============ Generator: Was kann ich kochen? ============ */
+let gen={have:'',wish:'',eaters:null,res:null,ai:null,msg:''};
+const genIds=()=>gen.eaters||S.persons.map(p=>p.id);
+const genPersons=()=>genIds().map(person).filter(Boolean);
+const terms=t=>String(t).split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean);
+function genSearch(){
+  const ps=genPersons();
+  const have=terms(gen.have).map(t=>({t:t.toLowerCase(),c:(matchIng(t)||t).toLowerCase()}));
+  const wish=terms(gen.wish).map(w=>({w:w.toLowerCase(),a:(matchIng(w)||'').toLowerCase()}));
+  const split=x=>x.split(/[\s\-]+/).filter(Boolean);
+  const hit=(name,h)=>{const n=name.toLowerCase();if(n===h.c)return true;const nt=split(n);
+    return [h.c,h.t].some(t=>{const w=split(t);return w.length&&w.every(x=>x.length>=3&&nt.some(y=>y.startsWith(x)))})};
+  const MODS=['schnell','aufwendig','aufwendiger','vegetarisch','vegan'];
+  const modOK=(r,m)=>m==='schnell'?r.cat==='schnell':m.startsWith('aufwendig')?r.cat==='aufwendig':m==='vegetarisch'?RDIET[r.diet]<=1:r.diet==='vegan';
+  const mods=wish.filter(x=>MODS.includes(x.w)).map(x=>x.w),wish2=wish.filter(x=>!MODS.includes(x.w));
+  const res=[];
+  for(const r of recipes()){
+    if(!ps.every(p=>canEat(p,r)))continue;
+    if(!mods.every(m=>modOK(r,m)))continue;
+    const names=[...new Set(r.ings.filter(i=>!(ING[i.n]&&ING[i.n].pantry)).map(i=>i.n))];
+    const got=names.filter(n=>have.some(h=>hit(n,h))),miss=names.filter(n=>!got.includes(n));
+    const addHit=(r.addons||[]).filter(a=>a.ings.some(i=>have.some(h=>hit(i.n,h)))).map(a=>a.label);
+    const hay=(r.title+' '+names.join(' ')+' '+r.cat+' '+r.diet).toLowerCase();
+    const wHit=wish2.filter(x=>hay.includes(x.w)||(x.a&&hay.includes(x.a)));
+    if(have.length&&!got.length&&!addHit.length&&!wHit.length)continue;
+    if(!have.length&&wish2.length&&!wHit.length)continue;
+    if(!have.length&&!wish2.length&&!mods.length)continue;
+    const score=(names.length&&have.length?got.length/names.length:0)+wHit.length*.4+(addHit.length?.15:0)+(S.favs[r.id]?.05:0);
+    res.push({r,got,miss,addHit,wHit,score,total:names.length});
+  }
+  res.sort((a,b)=>b.score-a.score);gen.res=res.slice(0,12);gen.msg=res.length?'':'';render()}
+function genCard(){
+  const ids=genIds();
+  const chips=S.persons.map(p=>`<label class="chip"><input type="checkbox" data-act="geneater" data-p="${p.id}" ${ids.includes(p.id)?'checked':''}>${esc(p.name)}</label>`).join('');
+  let h=`<div class="card"><h2>🥕 Was kann ich kochen?</h2>
+  <label class="f">Das habe ich zuhause<input id="gen_have" value="${esc(gen.have)}" placeholder="z. B. Hack, Zucchini, Reis"></label>
+  <label class="f">Darauf habe ich Lust<input id="gen_wish" value="${esc(gen.wish)}" placeholder="z. B. Pasta, Curry, schnell"></label>
+  <div class="mu" style="margin-top:8px">Wer isst mit?</div><div class="row" style="margin-top:4px">${chips}</div>
+  <div class="row" style="margin-top:10px"><button class="bt" data-act="gensearch">Rezepte finden</button><button class="bt sec" data-act="genai">💡 KI-Ideen</button></div>
+  <div id="gen_s" class="mu" style="margin-top:6px">${esc(gen.msg)}</div></div>`;
+  if(gen.res){
+    h+=gen.res.length?'<h3>Aus euren Rezepten</h3>'+gen.res.map(x=>{const r=x.r,ps=genPersons();
+      const two=r.type==='gemischt'&&ps.some(p=>!allowed(p.diet,r.diet))&&rec(r.pair);
+      return `<div class="card" data-act="open" data-id="${r.id}" style="cursor:pointer"><div class="row sp"><b>${esc(r.title)} ${heart(r.id)}</b>${x.total&&gen.have.trim()?`<span class="badge">${x.got.length}/${x.total} da</span>`:''}</div>
+      <div class="mu">${r.min} Min · ${r.cat} · ${TYPES[r.type]}</div>
+      ${gen.have.trim()?(x.miss.length?`<div class="mu">Fehlt: ${x.miss.map(esc).join(', ')}</div>`:'<div class="mu">✓ Alles da (außer Vorrat)</div>'):''}
+      ${x.addHit.length?`<div class="mu">Dazu passt: ${x.addHit.map(esc).join(', ')}</div>`:''}
+      ${two?`<div class="warn">Zwei Gerichte: auch „${esc(rec(r.pair).title)}“</div>`:''}</div>`}).join('')
+      :'<div class="card mu">In euren Rezepten passt nichts. Probier „KI-Ideen“ oder weniger Zutaten.</div>';}
+  if(gen.ai){
+    h+='<h3>💡 Ideen der KI</h3>'+(gen.ai.length?gen.ai.map((x,i)=>`<div class="card"><div class="row sp"><b>${esc(x.title)}</b><span class="badge ${x.diet==='fleisch'?'w':''}">${esc(x.diet)}</span></div>
+      <div class="mu">${x.who?'für '+esc(x.who)+' · ':''}${x.min} Min · ${x.serv} Portionen</div><div class="mu">${x.ings.map(esc).join(', ')}</div>
+      <button class="bt sm" style="margin-top:8px" data-act="genadopt" data-i="${i}">Als Rezept übernehmen</button></div>`).join(''):'<div class="card mu">Keine Ideen erhalten.</div>')
+      +'<div class="mu">Nährwerte werden nach dem Übernehmen aus den Zutaten berechnet. Bei Fleisch/vegetarisch-Paaren könnt ihr beim Speichern „Gemischt“ und das Pendant wählen.</div>';}
+  return h}
+async function genAI(){
+  gen.have=document.getElementById('gen_have').value;gen.wish=document.getElementById('gen_wish').value;
+  if(!gen.have.trim()&&!gen.wish.trim()){gen.msg='Bitte Zutaten oder einen Wunsch eintragen.';return render()}
+  gen.msg='Die KI überlegt…';gen.ai=null;render();
+  try{const groups=genPersons().map(p=>({who:p.name,diet:p.diet,exclude:p.exclude||''}));
+    const j=await callWorker('/idea',{have:gen.have,wish:gen.wish,groups});gen.ai=j.recipes||[];gen.msg=''}
+  catch(e){gen.msg='⚠ '+e.message}
+  render()}
 
 /* ============ Neu: Rezepte hinzufügen ============ */
 function addTab(){const st=S.settings||{};
@@ -597,7 +662,7 @@ function render(){
 document.addEventListener('click',ev=>{
   const el=ev.target.closest('[data-act]');if(!el)return;const a=el.dataset.act;
   if(a==='bg'){if(ev.target===el)closeModal();return}
-  if(['eater','addon','chk','rcat','rtype','imp-photo'].includes(a))return; // change-Events
+  if(['eater','addon','chk','rcat','rtype','imp-photo','geneater'].includes(a))return; // change-Events
   const k=el.dataset.k;
   switch(a){
    case'tab':tab=el.dataset.t;render();window.scrollTo(0,0);break;
@@ -627,6 +692,9 @@ document.addEventListener('click',ev=>{
    case'joinhh':doJoin();break;
    case'logout':doLogout();break;
    case'syncnow':accS('Synchronisiere…');pushDiff().then(()=>loadHH()).then(()=>{render()}).catch(e=>accS(e.message));break;
+   case'gensearch':gen.have=document.getElementById('gen_have').value;gen.wish=document.getElementById('gen_wish').value;genSearch();break;
+   case'genai':genAI();break;
+   case'genadopt':{const x=gen.ai&&gen.ai[+el.dataset.i];if(x)recipeForm({title:x.title,serv:x.serv,min:x.min,ings:x.ings.join('\n'),steps:x.steps.join('\n'),diet:x.diet});break}
    case'copy':{const g=shopList();const t=Object.keys(g).map(k=>k+':\n'+g[k].map(x=>'- '+x.n+' '+x.txt).join('\n')).join('\n\n');(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>alert('Kopiert.')).catch(()=>prompt('Liste:',t));break}
    case'export':{const t=JSON.stringify(S);(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>alert('Daten in die Zwischenablage kopiert. Auf dem anderen Gerät „Importieren“ wählen und einfügen.')).catch(()=>prompt('Daten kopieren:',t));break}
    case'import':{const t=prompt('Exportierte Daten hier einfügen:');if(t){try{S=Object.assign(defaults(),JSON.parse(t));save();render()}catch(e){alert('Das waren keine gültigen Daten.')}}break}
@@ -634,13 +702,15 @@ document.addEventListener('click',ev=>{
 document.addEventListener('change',ev=>{
   const el=ev.target;const a=el.dataset.act;
   if(a==='imp-photo'){doPhoto(el.files&&el.files[0]);return}
+  if(a==='geneater'){const id=el.dataset.p,cur=genIds();gen.eaters=el.checked?[...new Set([...cur,id])]:cur.filter(x=>x!==id);return}
   if(el.dataset.set){S.settings=S.settings||{};S.settings[el.dataset.set]=el.value.trim();save();return}
   if(el.dataset.pf){const p=person(el.dataset.p);if(p){p[el.dataset.pf]=el.type==='number'&&el.dataset.pf==='factor'?(parseFloat(el.value)||1):el.value;save();if(el.dataset.pf==='name'||el.dataset.pf==='diet')render()}return}
   if(a==='eater'){const e=entry(el.dataset.k);const id=el.dataset.p;e.eaters=el.checked?[...new Set([...e.eaters,id])]:e.eaters.filter(x=>x!==id);save();render()}
   else if(a==='addon'){const e=entry(el.dataset.k);e.addons=e.addons||{};e.addons[el.dataset.p]=+el.value;save();render()}
   else if(a==='chk'){const ws=el.dataset.ws;S.checked[ws]=S.checked[ws]||{};S.checked[ws][el.dataset.n]=el.checked;save();render()}
   else if(a==='rcat'){rcat=el.value;render()}else if(a==='rtype'){rtype=el.value;render()}});
-document.addEventListener('input',ev=>{if(ev.target.id==='rq'){rq=ev.target.value;render()}if(ev.target.id==='f_i')updateWarn()});
+document.addEventListener('input',ev=>{if(ev.target.id==='rq'){rq=ev.target.value;render()}if(ev.target.id==='f_i')updateWarn();if(ev.target.id==='gen_have')gen.have=ev.target.value;if(ev.target.id==='gen_wish')gen.wish=ev.target.value});
+document.addEventListener('keydown',ev=>{if(ev.key==='Enter'&&(ev.target.id==='gen_have'||ev.target.id==='gen_wish')){gen.have=document.getElementById('gen_have').value;gen.wish=document.getElementById('gen_wish').value;genSearch()}});
 render();boot();
 </script>
 </body>

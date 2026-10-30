@@ -51,6 +51,7 @@ export default {
           fehler: j.error && j.error.message,
         }, 200, h);
       }
+      if (path === '/idea') return out(await ideas(body, env), 200, h);
       if (path === '/recipe') return out(await fromUrl(body.url, env), 200, h);
       if (path === '/photo') return out(await fromPhoto(body.image, body.mime || 'image/jpeg', env), 200, h);
       return out({ error: 'Unbekannter Pfad' }, 404, h);
@@ -156,12 +157,12 @@ export async function fromPhoto(b64, mime, env) {
   if (!env.GEMINI_API_KEY) throw new Error('Auf dem Server fehlt der GEMINI_API_KEY');
   return normalize(await gemini([{ text: PROMPT }, { inline_data: { mime_type: mime, data: b64 } }], env));
 }
-async function gemini(parts, env) {
+async function gemini(parts, env, temp = 0.1) {
   const model = env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-    body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } }),
+    body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: temp } }),
     signal: AbortSignal.timeout(40000),
   });
   if (!r.ok) throw new Error('KI-Dienst: Fehler ' + r.status + ' ' + (await r.text()).slice(0, 160));
@@ -172,4 +173,30 @@ async function gemini(parts, env) {
 function normalize(j) {
   const arr = (a) => (Array.isArray(a) ? a.map(String).filter(Boolean) : []);
   return { title: String(j.title || ''), serv: +j.serv || 2, min: +j.min || 30, ings: arr(j.ings), steps: arr(j.steps) };
+}
+
+/* ---------- Rezeptideen aus Vorräten / Wünschen ---------- */
+export async function ideas(b, env) {
+  if (!env.GEMINI_API_KEY) throw new Error('Auf dem Server fehlt der GEMINI_API_KEY');
+  const clip = (s, n) => String(s || '').slice(0, n);
+  const who = (Array.isArray(b.groups) ? b.groups : []).slice(0, 6)
+    .map((g) => `- ${clip(g.who, 40)}: ${clip(g.diet, 20)}${g.exclude ? '; isst nicht: ' + clip(g.exclude, 80) : ''}`).join('\n');
+  const prompt =
+    'Schlage ein einfaches, alltagstaugliches Abendessen vor. ' +
+    `Zutaten zuhause: ${clip(b.have, 300) || 'keine Angabe'}. Lust auf: ${clip(b.wish, 200) || 'keine Angabe'}.\n` +
+    `Es essen mit:\n${who || '- 2 Personen: alles'}\n` +
+    'Alle sitzen am selben Tisch. Gib pro unterschiedlicher Ernährungsform (alles/vegetarisch/vegan) EIN Rezept zurück, ' +
+    'möglichst mit gleicher Basis, damit man zusammen kocht; wenn alle gleich essen, nur ein Rezept. ' +
+    'Antworte NUR mit JSON: {"recipes":[{"who":"Namen der Personen","diet":"fleisch|vegetarisch|vegan","title":"...","serv":Portionen für diese Personen,"min":Gesamtminuten,"ings":["200 g Mehl","2 Stk Ei"],"steps":["..."]}]}. ' +
+    'Regeln: Deutsch; Mengen als Zahl + Einheit (g, ml, Stk, EL, TL); Zutaten möglichst aus der Liste, Grundzutaten wie Öl, Salz, Gewürze dürfen ergänzt werden; ' +
+    'nichts verwenden, was jemand nicht isst; „fleisch“ nur, wenn Fleisch oder Fisch enthalten ist.';
+  const j = await gemini([{ text: prompt }], env, 0.7);
+  const arr = Array.isArray(j.recipes) ? j.recipes : [];
+  return {
+    recipes: arr.slice(0, 4).map((r) => ({
+      ...normalize(r),
+      who: clip(r.who, 80),
+      diet: ['vegan', 'vegetarisch', 'fleisch'].includes(r.diet) ? r.diet : 'vegetarisch',
+    })),
+  };
 }
