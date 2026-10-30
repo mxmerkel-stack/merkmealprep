@@ -37,6 +37,19 @@ export default {
     try { body = await req.json(); } catch { return out({ error: 'Ungültige Anfrage' }, 400, h); }
     const path = new URL(req.url).pathname;
     try {
+      if (path === '/diag') {
+        const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=100', {
+          headers: { 'x-goog-api-key': env.GEMINI_API_KEY || '' },
+          signal: AbortSignal.timeout(10000),
+        });
+        const j = await r.json().catch(() => ({}));
+        return out({
+          status: r.status,
+          modell: env.GEMINI_MODEL || 'gemini-flash-latest (Standard)',
+          flash: (j.models || []).map((m) => m.name.replace('models/', '')).filter((n) => /flash/.test(n)),
+          fehler: j.error && j.error.message,
+        }, 200, h);
+      }
       if (path === '/recipe') return out(await fromUrl(body.url, env), 200, h);
       if (path === '/photo') return out(await fromPhoto(body.image, body.mime || 'image/jpeg', env), 200, h);
       return out({ error: 'Unbekannter Pfad' }, 404, h);
