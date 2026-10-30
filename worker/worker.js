@@ -191,7 +191,10 @@ export async function ideas(b, env) {
     'Regeln: Deutsch; Mengen als Zahl + Einheit (g, ml, Stk, EL, TL); Zutaten möglichst aus der Liste, Grundzutaten wie Öl, Salz, Gewürze dürfen ergänzt werden; ' +
     'nichts verwenden, was jemand nicht isst; „fleisch“ nur, wenn Fleisch oder Fisch enthalten ist.';
   const j = await gemini([{ text: prompt }], env, 0.7);
-  const arr = Array.isArray(j.recipes) ? j.recipes : [];
+  let arr = Array.isArray(j) ? j : Array.isArray(j.recipes) ? j.recipes : Object.values(j || {}).find(Array.isArray) || [];
+  if (!arr.length && j && j.title) arr = [j];
+  arr = arr.filter((r) => r && typeof r === 'object' && r.title);
+  if (!arr.length) throw new Error('Die KI hat kein Rezept geliefert (' + Object.keys(j || {}).join(', ').slice(0, 80) + ')');
   return {
     recipes: arr.slice(0, 4).map((r) => ({
       ...normalize(r),
