@@ -52,6 +52,8 @@ input,select,textarea{font:inherit;min-height:46px;padding:10px 13px;border:1.5p
 input:focus,select:focus,textarea:focus{outline:2px solid var(--pt);outline-offset:1px;border-color:transparent}
 textarea{width:100%;min-height:96px}
 input[type=checkbox]{width:22px;height:22px;min-height:0;padding:0;accent-color:var(--pt)}
+.pwr{position:relative;display:block}.pwr input{padding-right:52px!important}
+.pwe{position:absolute;right:2px;top:50%;transform:translateY(-50%);margin-top:2px;width:48px;height:44px;border:0;background:transparent;color:var(--mu);display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:12px}.pwe:hover,.pwe[aria-pressed=true]{color:var(--pt)}
 label.f{display:block;font-size:13.5px;color:var(--mu);margin-top:10px;font-weight:600}
 label.f input,label.f select{display:block;width:100%;margin-top:4px;color:var(--ink);font-size:16px;font-weight:500}
 .chip{display:inline-flex;align-items:center;gap:8px;min-height:42px;padding:0 14px;border-radius:99px;background:var(--sf2);font-size:15px;font-weight:600}
@@ -1013,11 +1015,11 @@ async function boot(){
 function accountTab(){
   const box=h=>`<div class="card">${h}</div>`;
   if(!auth)return box(`<h2>☁️ Anmelden</h2><div class="mu">Mit einem Konto seht ihr beide dieselben Daten, am Handy und am PC. Jeder legt ein eigenes Konto an (E-Mail + Passwort), danach verbindet ihr euch über einen Einladungscode.</div>
-   <label class="f">E-Mail<input id="acc_mail" type="email" autocomplete="email"></label><label class="f">Passwort (mind. 6 Zeichen)<input id="acc_pw" type="password" autocomplete="current-password"></label>
+   <label class="f">E-Mail<input id="acc_mail" type="email" autocomplete="email"></label>${pwField('acc_pw','Passwort (mind. 6 Zeichen)','current-password')}
    <div class="row" style="margin-top:10px"><button class="bt" data-act="login">Anmelden</button><button class="bt sec" data-act="register">Neu registrieren</button></div>
    <button class="lnk" style="margin-top:6px" data-act="forgot">Passwort vergessen?</button><div id="acc_s" class="warn" style="margin-top:8px">${esc(recErr)}</div>`);
   if(recovering)return box(`<h2>Neues Passwort festlegen</h2><div class="mu">Du kommst über den Link aus der E-Mail. Lege jetzt ein neues Passwort fest.</div>
-   <label class="f">Neues Passwort (mind. 6 Zeichen)<input id="acc_np" type="password" autocomplete="new-password"></label><label class="f">Passwort wiederholen<input id="acc_np2" type="password" autocomplete="new-password"></label>
+   ${pwField('acc_np','Neues Passwort (mind. 6 Zeichen)','new-password')}${pwField('acc_np2','Passwort wiederholen','new-password')}
    <button class="bt" style="margin-top:10px" data-act="setpw">Passwort speichern</button><div id="acc_s" class="warn" style="margin-top:8px"></div>`);
   if(!HH)return box(`<h2>Haushalt</h2><div class="mu">Angemeldet als ${esc(auth.email||'')}. Einer von euch legt den gemeinsamen Haushalt an, der andere tritt mit dem Code bei.</div>
    <button class="bt" style="margin-top:10px" data-act="mkhh">Neuen Haushalt anlegen</button>
@@ -1027,6 +1029,7 @@ function accountTab(){
   return box(`<h2>☁️ Verbunden</h2><div class="mu">Angemeldet als ${esc(auth.email||'')} · Status: ${esc(syncMsg||'…')}</div>
    <h3>Einladungscode für deine Frau</h3><div style="font-size:22px;letter-spacing:1px;font-weight:600">${esc(HH.invite_code)}</div><div class="mu">Sie registriert sich auf ihrem Gerät, wählt „Beitreten“ und gibt den Code ein.</div>
    <div class="row" style="margin-top:12px"><button class="bt sec" data-act="syncnow">Jetzt synchronisieren</button><button class="bt sm dng" data-act="logout">Abmelden</button></div><div id="acc_s" class="warn" style="margin-top:8px"></div>`)}
+const pwField=(id,label,ac)=>`<label class="f">${label}<span class="pwr"><input id="${id}" type="password" autocomplete="${ac}"><button type="button" class="pwe" data-act="pweye" data-for="${id}" aria-label="Passwort anzeigen" aria-pressed="false">${ico('eye')}</button></span></label>`;
 const accS=t=>{const e=document.getElementById('acc_s');if(e)e.textContent=t};
 async function doAuth(kind){const m=(document.getElementById('acc_mail').value||'').trim(),p=document.getElementById('acc_pw').value||'';
   if(!m||p.length<6)return accS('Bitte E-Mail und ein Passwort mit mindestens 6 Zeichen eingeben.');
@@ -1054,6 +1057,8 @@ function doLogout(){auth=null;HH=null;lastPushed={};lastTs='';saveAuth();setSync
 
 /* ============ Grundgerüst ============ */
 const ICO={
+eye:'<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+eyeoff:'<path d="M3 3l18 18M10.6 5.7A9 9 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a16 16 0 0 1-3 3.8M6.7 7.2A15.5 15.5 0 0 0 2.5 12S6 18.5 12 18.5c1.5 0 2.8-.4 4-.9M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
 plan:'<rect x="3.5" y="5" width="17" height="15" rx="3.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
 shop:'<path d="M5 8.5h14l-1.2 10.2a2 2 0 0 1-2 1.8H8.2a2 2 0 0 1-2-1.8L5 8.5z"/><path d="M9 8.5V7a3 3 0 0 1 6 0v1.5"/>',
 recipes:'<path d="M12 6.5C10 5 7.5 4.5 4 4.5v13c3.5 0 6 .5 8 2 2-1.5 4.5-2 8-2v-13c-3.5 0-6 .5-8 2zM12 6.5v13"/>',
@@ -1111,6 +1116,7 @@ document.addEventListener('click',ev=>{
    case'fav':toggleFav(el.dataset.id);break;
    case'hmode':hmode=el.dataset.m;render();break;
    case'login':doAuth('in');break;
+   case'pweye':{const i=document.getElementById(el.dataset.for),show=i.type==='password';i.type=show?'text':'password';el.innerHTML=ico(show?'eyeoff':'eye');el.setAttribute('aria-pressed',show);el.setAttribute('aria-label',show?'Passwort verbergen':'Passwort anzeigen');break}
    case'forgot':doForgot();break;
    case'setpw':doSetPw();break;
    case'register':doAuth('up');break;
