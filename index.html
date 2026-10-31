@@ -922,6 +922,12 @@ function moreTab(){
 const SB={url:'https://ewwotoruoplvagwyjdfj.supabase.co',key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3d290b3J1b3BsdmFnd3lqZGZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyOTU4NTksImV4cCI6MjEwODg3MTg1OX0.mD13eYfqVL4Vlcq3AfMq-LrsR16PXRQUeXlbSZzHh4w'};
 const AUTHKEY='essensplaner_auth_v1';
 let auth=null;try{auth=JSON.parse(localStorage.getItem(AUTHKEY)||'null')}catch(e){}
+let recovering=false,recErr='';
+(()=>{const h=location.hash.slice(1);if(!h||!/access_token|error/.test(h))return;const q=new URLSearchParams(h);
+  if(q.get('type')==='recovery'&&q.get('access_token')){auth={access_token:q.get('access_token'),refresh_token:q.get('refresh_token'),expires_at:Number(q.get('expires_at'))||Math.floor(Date.now()/1000)+(Number(q.get('expires_in'))||3600),email:''};saveAuthEarly();recovering=true}
+  else if(q.get('error'))recErr=/expired|invalid/i.test(q.get('error_code')+q.get('error_description'))?'Der Link ist abgelaufen oder wurde schon benutzt. Bitte fordere einen neuen an.':(q.get('error_description')||'Link ungültig').replace(/\+/g,' ');
+  try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}})();
+function saveAuthEarly(){try{localStorage.setItem(AUTHKEY,JSON.stringify(auth))}catch(e){}}
 let HH=null,lastPushed={},lastTs='',pushing=false,again=false,pt=null,syncMsg='';
 const cloudOn=()=>!!(auth&&auth.access_token&&HH);
 const canon=v=>v===null||typeof v!=='object'?JSON.stringify(v):Array.isArray(v)?'['+v.map(canon).join(',')+']':'{'+Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}';
@@ -1008,7 +1014,11 @@ function accountTab(){
   const box=h=>`<div class="card">${h}</div>`;
   if(!auth)return box(`<h2>☁️ Anmelden</h2><div class="mu">Mit einem Konto seht ihr beide dieselben Daten, am Handy und am PC. Jeder legt ein eigenes Konto an (E-Mail + Passwort), danach verbindet ihr euch über einen Einladungscode.</div>
    <label class="f">E-Mail<input id="acc_mail" type="email" autocomplete="email"></label><label class="f">Passwort (mind. 6 Zeichen)<input id="acc_pw" type="password" autocomplete="current-password"></label>
-   <div class="row" style="margin-top:10px"><button class="bt" data-act="login">Anmelden</button><button class="bt sec" data-act="register">Neu registrieren</button></div><div id="acc_s" class="warn" style="margin-top:8px"></div>`);
+   <div class="row" style="margin-top:10px"><button class="bt" data-act="login">Anmelden</button><button class="bt sec" data-act="register">Neu registrieren</button></div>
+   <button class="lnk" style="margin-top:6px" data-act="forgot">Passwort vergessen?</button><div id="acc_s" class="warn" style="margin-top:8px">${esc(recErr)}</div>`);
+  if(recovering)return box(`<h2>Neues Passwort festlegen</h2><div class="mu">Du kommst über den Link aus der E-Mail. Lege jetzt ein neues Passwort fest.</div>
+   <label class="f">Neues Passwort (mind. 6 Zeichen)<input id="acc_np" type="password" autocomplete="new-password"></label><label class="f">Passwort wiederholen<input id="acc_np2" type="password" autocomplete="new-password"></label>
+   <button class="bt" style="margin-top:10px" data-act="setpw">Passwort speichern</button><div id="acc_s" class="warn" style="margin-top:8px"></div>`);
   if(!HH)return box(`<h2>Haushalt</h2><div class="mu">Angemeldet als ${esc(auth.email||'')}. Einer von euch legt den gemeinsamen Haushalt an, der andere tritt mit dem Code bei.</div>
    <button class="bt" style="margin-top:10px" data-act="mkhh">Neuen Haushalt anlegen</button>
    <label class="f">…oder Einladungscode eingeben<input id="acc_code" placeholder="z. B. 3fa91c0d2b7e"></label><button class="bt sec" style="margin-top:8px" data-act="joinhh">Beitreten</button>
@@ -1022,6 +1032,19 @@ async function doAuth(kind){const m=(document.getElementById('acc_mail').value||
   if(!m||p.length<6)return accS('Bitte E-Mail und ein Passwort mit mindestens 6 Zeichen eingeben.');
   accS('Einen Moment…');
   try{const ok=await authCall(kind,m,p);if(!ok)return accS('Fast geschafft: Bitte bestätige die E-Mail (Link im Postfach) und melde dich danach an.');
+    await loadHH();render()}catch(e){accS(e.message)}}
+async function doForgot(){const m=(document.getElementById('acc_mail').value||'').trim();
+  if(!/^\S+@\S+\.\S+$/.test(m))return accS('Bitte oben deine E-Mail-Adresse eintragen, dann noch einmal tippen.');
+  accS('Sende E-Mail…');
+  try{const r=await fetch(SB.url+'/auth/v1/recover?redirect_to='+encodeURIComponent(location.origin+location.pathname),{method:'POST',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify({email:m})});
+    if(!r.ok){const t=await errText(r);return accS(/rate|seconds/i.test(t)?'Bitte kurz warten, bevor du eine weitere Mail anforderst.':t)}
+    accS('Falls ein Konto mit dieser Adresse existiert, ist jetzt eine E-Mail unterwegs. Öffne den Link darin auf diesem Gerät (auch im Spam-Ordner nachsehen).')}catch(e){accS('Keine Verbindung. Bitte später erneut versuchen.')}}
+async function doSetPw(){const a=document.getElementById('acc_np').value||'',b=document.getElementById('acc_np2').value||'';
+  if(a.length<6)return accS('Mindestens 6 Zeichen, bitte.');if(a!==b)return accS('Die beiden Passwörter stimmen nicht überein.');
+  accS('Speichere…');
+  try{const r=await sbFetch('/auth/v1/user',{method:'PUT',body:JSON.stringify({password:a})});
+    if(!r.ok){const t=await errText(r);return accS(/different|same/i.test(t)?'Das neue Passwort muss sich vom alten unterscheiden.':t)}
+    const u=await r.json();auth.email=u.email||auth.email;saveAuth();recovering=false;toast('Neues Passwort gespeichert');
     await loadHH();render()}catch(e){accS(e.message)}}
 async function doCreate(){accS('Lege an…');try{const a=await rpc('create_household');HH=a[0];lastPushed={};lastTs='';await pushDiff();setSync('verbunden');render()}catch(e){accS(e.message)}}
 async function doJoin(){const c=(document.getElementById('acc_code').value||'').trim();if(!c)return accS('Bitte den Code eingeben.');
@@ -1088,6 +1111,8 @@ document.addEventListener('click',ev=>{
    case'fav':toggleFav(el.dataset.id);break;
    case'hmode':hmode=el.dataset.m;render();break;
    case'login':doAuth('in');break;
+   case'forgot':doForgot();break;
+   case'setpw':doSetPw();break;
    case'register':doAuth('up');break;
    case'mkhh':doCreate();break;
    case'joinhh':doJoin();break;
@@ -1129,6 +1154,7 @@ document.addEventListener('keydown',ev=>{const el=ev.target;if((ev.key==='Enter'
 let tx=null,ty=null;
 document.addEventListener('touchstart',ev=>{if(tab!=='day'||document.querySelector('.modal'))return;tx=ev.touches[0].clientX;ty=ev.touches[0].clientY},{passive:true});
 document.addEventListener('touchend',ev=>{if(tx===null)return;const dx=ev.changedTouches[0].clientX-tx,dy=ev.changedTouches[0].clientY-ty;tx=null;if(Math.abs(dx)>70&&Math.abs(dy)<50)shiftDay(dx<0?1:-1)},{passive:true});
+if(recovering||recErr)tab='account';
 render();boot();
 if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol))navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>

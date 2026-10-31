@@ -1,5 +1,5 @@
 /* MerkMealPrep – Offline-Hülle. Netzwerk zuerst, damit Updates sofort ankommen; ohne Netz kommt die letzte Version aus dem Cache. */
-const V = 'mmp-v3';
+const V = 'mmp-v4';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'apple-touch-icon.png'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(V).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
